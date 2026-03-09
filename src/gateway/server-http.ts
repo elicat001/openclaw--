@@ -634,7 +634,7 @@ export function createGatewayHttpServer(opts: {
       const requestStages: GatewayHttpRequestStage[] = [
         {
           name: "admin-api",
-          run: () => handleAdminApiRequest(req, res),
+          run: () => handleAdminApiRequest(req, res, resolvedAuth),
         },
         {
           name: "hooks",

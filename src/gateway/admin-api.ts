@@ -9,6 +9,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { runDoctor } from "../agent-reach/doctor.js";
 import type { AgentReachStatus } from "../agent-reach/types.js";
 import { loadConfig } from "../config/config.js";
+import { safeEqualSecret } from "../security/secret-equal.js";
+import type { ResolvedGatewayAuth } from "./auth.js";
 import { getHealthCache, refreshGatewayHealthSnapshot } from "./server/health-state.js";
 
 export interface AdminChannelStatus {
@@ -158,7 +160,26 @@ async function getAgentReachStatus(): Promise<AgentReachStatus | null> {
 
 const ADMIN_API_PATH = "/api/admin/status";
 
-export function handleAdminApiRequest(req: IncomingMessage, res: ServerResponse): boolean {
+/** Extract bearer token from Authorization header or query param. */
+function extractAdminToken(req: IncomingMessage): string | undefined {
+  const auth =
+    typeof req.headers.authorization === "string" ? req.headers.authorization.trim() : "";
+  if (auth.toLowerCase().startsWith("bearer ")) {
+    const token = auth.slice(7).trim();
+    if (token) {
+      return token;
+    }
+  }
+  // Fallback: allow token via query param (used by Control UI same-origin requests)
+  const url = new URL(req.url ?? "/", "http://localhost");
+  return url.searchParams.get("token") ?? undefined;
+}
+
+export function handleAdminApiRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  auth?: ResolvedGatewayAuth,
+): boolean {
   const url = new URL(req.url ?? "/", "http://localhost");
   if (url.pathname !== ADMIN_API_PATH) {
     return false;
@@ -168,6 +189,18 @@ export function handleAdminApiRequest(req: IncomingMessage, res: ServerResponse)
     res.writeHead(405, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Method not allowed" }));
     return true;
+  }
+
+  // Authenticate if gateway uses token or password auth
+  if (auth && auth.mode !== "none") {
+    const requestToken = extractAdminToken(req);
+    const expectedSecret =
+      auth.mode === "token" ? auth.token : auth.mode === "password" ? auth.password : undefined;
+    if (expectedSecret && (!requestToken || !safeEqualSecret(requestToken, expectedSecret))) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return true;
+    }
   }
 
   // Trigger a background health refresh if cache is stale
