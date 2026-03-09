@@ -208,6 +208,9 @@ export async function refreshActiveTab(host: SettingsHost) {
       }
     }
   }
+  if (host.tab === "admin") {
+    await (host as unknown as OpenClawApp).loadAdmin();
+  }
   if (host.tab === "nodes") {
     await loadNodes(host as unknown as OpenClawApp);
     await loadDevices(host as unknown as OpenClawApp);

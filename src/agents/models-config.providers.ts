@@ -28,6 +28,11 @@ import {
   resolveCloudflareAiGatewayBaseUrl,
 } from "./cloudflare-ai-gateway.js";
 import {
+  buildDeepSeekModelDefinition,
+  DEEPSEEK_BASE_URL,
+  DEEPSEEK_MODEL_CATALOG,
+} from "./deepseek-models.js";
+import {
   buildDoubaoModelDefinition,
   DOUBAO_BASE_URL,
   DOUBAO_MODEL_CATALOG,
@@ -53,6 +58,7 @@ import {
   buildTogetherModelDefinition,
 } from "./together-models.js";
 import { discoverVeniceModels, VENICE_BASE_URL } from "./venice-models.js";
+import { buildZhipuModelDefinition, ZHIPU_BASE_URL, ZHIPU_MODEL_CATALOG } from "./zhipu-models.js";
 
 type ModelsConfig = NonNullable<OpenClawConfig["models"]>;
 export type ProviderConfig = NonNullable<ModelsConfig["providers"]>[string];
@@ -868,6 +874,22 @@ export function buildQianfanProvider(): ProviderConfig {
   };
 }
 
+export function buildDeepSeekProvider(): ProviderConfig {
+  return {
+    baseUrl: DEEPSEEK_BASE_URL,
+    api: "openai-completions",
+    models: DEEPSEEK_MODEL_CATALOG.map(buildDeepSeekModelDefinition),
+  };
+}
+
+export function buildZhipuProvider(): ProviderConfig {
+  return {
+    baseUrl: ZHIPU_BASE_URL,
+    api: "openai-completions",
+    models: ZHIPU_MODEL_CATALOG.map(buildZhipuModelDefinition),
+  };
+}
+
 export function buildNvidiaProvider(): ProviderConfig {
   return {
     baseUrl: NVIDIA_BASE_URL,
@@ -1106,6 +1128,20 @@ export async function resolveImplicitProviders(params: {
       ...hfProvider,
       apiKey: huggingfaceKey,
     };
+  }
+
+  const deepseekKey =
+    resolveEnvApiKeyVarName("deepseek") ??
+    resolveApiKeyFromProfiles({ provider: "deepseek", store: authStore });
+  if (deepseekKey) {
+    providers.deepseek = { ...buildDeepSeekProvider(), apiKey: deepseekKey };
+  }
+
+  const zhipuKey =
+    resolveEnvApiKeyVarName("zhipu") ??
+    resolveApiKeyFromProfiles({ provider: "zhipu", store: authStore });
+  if (zhipuKey) {
+    providers.zhipu = { ...buildZhipuProvider(), apiKey: zhipuKey };
   }
 
   const qianfanKey =

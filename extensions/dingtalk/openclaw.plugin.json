@@ -1,0 +1,22 @@
+{
+  "id": "dingtalk",
+  "channels": ["dingtalk"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "appKey": {
+        "type": "string",
+        "description": "钉钉应用 AppKey"
+      },
+      "appSecret": {
+        "type": "string",
+        "description": "钉钉应用 AppSecret"
+      },
+      "robotCode": {
+        "type": "string",
+        "description": "机器人编码 (robotCode)"
+      }
+    }
+  }
+}
