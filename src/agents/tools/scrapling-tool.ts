@@ -112,7 +112,7 @@ function buildScript(opts: {
   const extractBlock = selectorEscaped
     ? `
 items = page.css('${selectorEscaped}')
-texts = [item.text() for item in items]
+texts = [str(item.text) for item in items]
 result = {"status": page.status, "selector": '${selectorEscaped}', "count": len(texts), "items": texts[:100]}
 `
     : `

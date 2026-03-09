@@ -111,7 +111,7 @@ python3 -c "
 from scrapling import Fetcher
 page = Fetcher().get('URL')
 for item in page.css('.target-class'):
-    print(item.text())
+    print(item.text)
 "
 ```
 
