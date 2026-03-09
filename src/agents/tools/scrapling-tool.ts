@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { Type } from "@sinclair/typebox";
+import { extendedPythonPath } from "../../agent-reach/extended-path.js";
 import { stringEnum } from "../schema/typebox.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
@@ -42,27 +43,55 @@ const ScraplingSchema = Type.Object({
 const DEFAULT_MAX_CHARS = 50_000;
 const EXEC_TIMEOUT_MS = 60_000;
 
-/** Build PATH that includes common user-install locations for pip binaries. */
-function extendedPath(): string {
-  const home = process.env.HOME ?? "";
-  const extra = [
-    `${home}/Library/Python/3.9/bin`,
-    `${home}/Library/Python/3.10/bin`,
-    `${home}/Library/Python/3.11/bin`,
-    `${home}/Library/Python/3.12/bin`,
-    `${home}/Library/Python/3.13/bin`,
-    `${home}/Library/Python/3.14/bin`,
-    `${home}/.local/bin`,
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-  ];
-  return `${extra.join(":")}:${process.env.PATH ?? ""}`;
-}
+/**
+ * Python script that reads parameters from stdin as JSON.
+ * This avoids string interpolation of user input into code, preventing injection.
+ */
+const PYTHON_SCRIPT = `
+import json, sys, warnings
+warnings.filterwarnings("ignore")
 
-function runPython(script: string): Promise<{ stdout: string; stderr: string }> {
+params = json.loads(sys.stdin.read())
+url = params["url"]
+mode = params.get("mode", "fast")
+selector = params.get("selector")
+max_chars = params.get("maxChars", 50000)
+solve_cf = params.get("solveCloudflare", False)
+proxy = params.get("proxy")
+
+proxy_kw = {"proxy": proxy} if proxy else {}
+
+if mode == "stealth":
+    from scrapling import StealthyFetcher
+    fetch_kw = {"headless": True, "network_idle": True, **proxy_kw}
+    if solve_cf:
+        fetch_kw["solve_cloudflare"] = True
+    page = StealthyFetcher().fetch(url, **fetch_kw)
+elif mode == "dynamic":
+    from scrapling import PlayWrightFetcher
+    page = PlayWrightFetcher().fetch(url, network_idle=True, disable_resources=True, **proxy_kw)
+else:
+    from scrapling import Fetcher
+    page = Fetcher().get(url, **proxy_kw)
+
+if selector:
+    items = page.css(selector)
+    texts = [str(item.text) for item in items]
+    result = {"status": page.status, "selector": selector, "count": len(texts), "items": texts[:100]}
+else:
+    text = page.get_all_text()
+    result = {"status": page.status, "length": len(text), "text": text[:max_chars]}
+
+print(json.dumps(result, ensure_ascii=False))
+`.trim();
+
+function runPython(
+  script: string,
+  stdinData?: string,
+): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const env = { ...process.env, PATH: extendedPath() };
-    execFile(
+    const env = { ...process.env, PATH: extendedPythonPath() };
+    const child = execFile(
       "python3",
       ["-c", script],
       { timeout: EXEC_TIMEOUT_MS, env, maxBuffer: 10_000_000 },
@@ -74,60 +103,11 @@ function runPython(script: string): Promise<{ stdout: string; stderr: string }> 
         }
       },
     );
+    if (stdinData && child.stdin) {
+      child.stdin.write(stdinData);
+      child.stdin.end();
+    }
   });
-}
-
-function buildScript(opts: {
-  url: string;
-  mode: string;
-  selector?: string;
-  maxChars: number;
-  solveCloudflare: boolean;
-  proxy?: string;
-}): string {
-  const proxyArg = opts.proxy ? `, proxy='${opts.proxy.replace(/'/g, "\\'")}'` : "";
-  const urlEscaped = opts.url.replace(/'/g, "\\'");
-  const selectorEscaped = opts.selector?.replace(/'/g, "\\'");
-
-  let fetchLine: string;
-  switch (opts.mode) {
-    case "stealth":
-      fetchLine = `page = StealthyFetcher().fetch('${urlEscaped}', headless=True, network_idle=True${opts.solveCloudflare ? ", solve_cloudflare=True" : ""}${proxyArg})`;
-      break;
-    case "dynamic":
-      fetchLine = `page = PlayWrightFetcher().fetch('${urlEscaped}', network_idle=True, disable_resources=True${proxyArg})`;
-      break;
-    default:
-      fetchLine = `page = Fetcher().get('${urlEscaped}'${proxyArg})`;
-      break;
-  }
-
-  const importLine =
-    opts.mode === "stealth"
-      ? "from scrapling import StealthyFetcher"
-      : opts.mode === "dynamic"
-        ? "from scrapling import PlayWrightFetcher"
-        : "from scrapling import Fetcher";
-
-  const extractBlock = selectorEscaped
-    ? `
-items = page.css('${selectorEscaped}')
-texts = [str(item.text) for item in items]
-result = {"status": page.status, "selector": '${selectorEscaped}', "count": len(texts), "items": texts[:100]}
-`
-    : `
-text = page.get_all_text()
-result = {"status": page.status, "length": len(text), "text": text[:${opts.maxChars}]}
-`;
-
-  return `
-import json, warnings
-warnings.filterwarnings("ignore")
-${importLine}
-${fetchLine}
-${extractBlock}
-print(json.dumps(result, ensure_ascii=False))
-`.trim();
 }
 
 export function createScraplingTool(): AnyAgentTool | null {
@@ -149,10 +129,17 @@ export function createScraplingTool(): AnyAgentTool | null {
       const solveCloudflare = params.solveCloudflare === true;
       const proxy = readStringParam(params, "proxy");
 
-      const script = buildScript({ url, mode, selector, maxChars, solveCloudflare, proxy });
+      const stdinPayload = JSON.stringify({
+        url,
+        mode,
+        selector: selector ?? undefined,
+        maxChars,
+        solveCloudflare,
+        proxy: proxy ?? undefined,
+      });
 
       try {
-        const { stdout } = await runPython(script);
+        const { stdout } = await runPython(PYTHON_SCRIPT, stdinPayload);
         const result = JSON.parse(stdout.trim());
         return jsonResult(result);
       } catch (err) {

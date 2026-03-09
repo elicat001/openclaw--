@@ -5,30 +5,14 @@
  * are installed and accessible on the system PATH.
  */
 import { execFile } from "node:child_process";
+import { extendedPythonPath } from "./extended-path.js";
 import { PLATFORMS } from "./platforms.js";
 import type { AgentReachPlatform, AgentReachStatus } from "./types.js";
-
-/** Build PATH that includes common user-install locations for pip/brew binaries. */
-function extendedPath(): string {
-  const home = process.env.HOME ?? "";
-  const extra = [
-    `${home}/Library/Python/3.9/bin`,
-    `${home}/Library/Python/3.10/bin`,
-    `${home}/Library/Python/3.11/bin`,
-    `${home}/Library/Python/3.12/bin`,
-    `${home}/Library/Python/3.13/bin`,
-    `${home}/Library/Python/3.14/bin`,
-    `${home}/.local/bin`,
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-  ];
-  return `${extra.join(":")}:${process.env.PATH ?? ""}`;
-}
 
 function hasBinary(name: string): Promise<boolean> {
   return new Promise((resolve) => {
     const cmd = process.platform === "win32" ? "where" : "which";
-    const env = { ...process.env, PATH: extendedPath() };
+    const env = { ...process.env, PATH: extendedPythonPath() };
     execFile(cmd, [name], { timeout: 5000, env }, (err) => {
       resolve(!err);
     });
@@ -38,7 +22,7 @@ function hasBinary(name: string): Promise<boolean> {
 /** Check if a Python module is importable. */
 function hasPythonModule(moduleName: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const env = { ...process.env, PATH: extendedPath() };
+    const env = { ...process.env, PATH: extendedPythonPath() };
     execFile("python3", ["-c", `import ${moduleName}`], { timeout: 5000, env }, (err) => {
       resolve(!err);
     });
