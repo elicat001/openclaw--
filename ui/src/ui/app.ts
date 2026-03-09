@@ -178,6 +178,49 @@ export class OpenClawApp extends LitElement {
   @state() execApprovalError: string | null = null;
   @state() pendingGatewayUrl: string | null = null;
 
+  @state() adminLoading = false;
+  @state() adminError: string | null = null;
+  @state() adminData: {
+    channels: Array<{
+      id: string;
+      name: string;
+      status: "connected" | "disconnected" | "error";
+      lastActivity?: number;
+    }>;
+    plugins: Array<{
+      id: string;
+      name: string;
+      version: string;
+      enabled: boolean;
+      hookCount: number;
+    }>;
+    sessions: Array<{ id: string; channel: string; startedAt: number; messageCount: number }>;
+    gatewayUptime: number;
+    memoryUsageMb: number;
+  } | null = null;
+
+  async loadAdmin() {
+    this.adminLoading = true;
+    this.adminError = null;
+    try {
+      const base = this.settings.gatewayUrl?.replace(/^ws/, "http") ?? `http://127.0.0.1:18789`;
+      const url = `${base}/api/admin/status`;
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (this.password.trim()) {
+        headers.Authorization = `Bearer ${this.password.trim()}`;
+      }
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      this.adminData = await res.json();
+    } catch (err) {
+      this.adminError = String(err instanceof Error ? err.message : err);
+    } finally {
+      this.adminLoading = false;
+    }
+  }
+
   @state() configLoading = false;
   @state() configRaw = "{\n}\n";
   @state() configRawOriginal = "";

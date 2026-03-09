@@ -232,6 +232,38 @@ export type AppViewState = {
     skillEdits: Record<string, string>;
     skillMessages: Record<string, SkillMessage>;
     skillsBusyKey: string | null;
+    adminLoading: boolean;
+    adminError: string | null;
+    adminData: {
+      channels: Array<{
+        id: string;
+        name: string;
+        status: "connected" | "disconnected" | "error";
+        lastActivity?: number;
+      }>;
+      plugins: Array<{
+        id: string;
+        name: string;
+        version: string;
+        enabled: boolean;
+        hookCount: number;
+      }>;
+      sessions: Array<{ id: string; channel: string; startedAt: number; messageCount: number }>;
+      gatewayUptime: number;
+      memoryUsageMb: number;
+      agentReach: {
+        installed: boolean;
+        platforms: Array<{
+          name: string;
+          label: string;
+          status: "ok" | "warn" | "off" | "error";
+          message: string;
+        }>;
+        availableCount: number;
+        totalCount: number;
+      } | null;
+    } | null;
+    loadAdmin: () => Promise<void>;
     debugLoading: boolean;
     debugStatus: StatusSummary | null;
     debugHealth: HealthSnapshot | null;

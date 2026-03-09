@@ -66,6 +66,7 @@ import {
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "./external-link.ts";
 import { icons } from "./icons.ts";
 import { normalizeBasePath, TAB_GROUPS, subtitleForTab, titleForTab } from "./navigation.ts";
+import { renderAdmin } from "./views/admin.ts";
 import { resolveConfiguredCronModelSuggestions, sortLocaleStrings } from "./views/agents-utils.ts";
 import { renderAgents } from "./views/agents.ts";
 import { renderChannels } from "./views/channels.ts";
@@ -532,6 +533,17 @@ export function renderApp(state: AppViewState) {
                   }
                   await loadCronRuns(state, state.cronRunsJobId);
                 },
+              })
+            : nothing
+        }
+
+        ${
+          state.tab === "admin"
+            ? renderAdmin({
+                loading: state.adminLoading,
+                error: state.adminError,
+                data: state.adminData,
+                onRefresh: () => state.loadAdmin(),
               })
             : nothing
         }
