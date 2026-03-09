@@ -98,6 +98,14 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "scrapling",
+    label: "scrapling",
+    description: "Scrape web pages with anti-bot bypass",
+    sectionId: "web",
+    profiles: [],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "memory_search",
     label: "memory_search",
     description: "Semantic search",

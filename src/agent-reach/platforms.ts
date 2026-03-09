@@ -104,6 +104,15 @@ export const PLATFORMS: PlatformDef[] = [
     requiredBins: ["ffmpeg"],
     installHint: "brew install ffmpeg  (also needs Groq API key for Whisper transcription)",
   },
+  {
+    name: "scrapling",
+    label: "Scrapling (Stealth Scraping)",
+    backends: ["scrapling"],
+    tier: 1,
+    requiredBins: ["python3"],
+    requiredPyModules: ["scrapling"],
+    installHint: 'pip3 install "scrapling[all]" && scrapling install',
+  },
   // Tier 2: needs Docker, cookies, or complex setup
   {
     name: "xiaohongshu",

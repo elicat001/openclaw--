@@ -1,6 +1,6 @@
 ---
 name: agent-reach
-description: "Internet access for AI agents: read/search/interact with 15+ platforms — Twitter/X, YouTube, Bilibili, Reddit, GitHub, XiaoHongShu (小红书), Douyin (抖音), WeChat Articles (微信公众号), Weibo (微博), LinkedIn, Boss直聘, RSS, Exa web search, and any web page. Use when: (1) user asks to search/read any of these platforms, (2) user shares a URL from a supported platform, (3) user asks to search the web or research a topic, (4) user asks to post/comment/interact on supported platforms. Triggers: 搜推特, 搜小红书, 看视频, 搜一下, 上网搜, 帮我查, 全网搜索, search twitter, youtube transcript, search reddit, read this link, B站, 抖音, 微信文章, 公众号, LinkedIn, RSS, web search."
+description: "Internet access for AI agents: read/search/interact with 16+ platforms — Twitter/X, YouTube, Bilibili, Reddit, GitHub, XiaoHongShu (小红书), Douyin (抖音), WeChat Articles (微信公众号), Weibo (微博), LinkedIn, Boss直聘, RSS, Exa web search, Scrapling (stealth scraping), and any web page. Use when: (1) user asks to search/read any of these platforms, (2) user shares a URL from a supported platform, (3) user asks to search the web or research a topic, (4) user asks to post/comment/interact on supported platforms, (5) user needs to scrape a site with anti-bot protection. Triggers: 搜推特, 搜小红书, 看视频, 搜一下, 上网搜, 帮我查, 全网搜索, search twitter, youtube transcript, search reddit, read this link, B站, 抖音, 微信文章, 公众号, LinkedIn, RSS, web search, scrape, 爬取, 抓取, bypass cloudflare."
 metadata:
   {
     "openclaw":
@@ -30,6 +30,13 @@ metadata:
               "bins": ["mcporter"],
               "label": "Install mcporter (MCP tool bridge)",
             },
+            {
+              "id": "scrapling",
+              "kind": "pip",
+              "package": "scrapling[all]",
+              "bins": [],
+              "label": "Install Scrapling (stealth web scraping)",
+            },
           ],
       },
   }
@@ -37,7 +44,7 @@ metadata:
 
 # Agent Reach — Internet Access Tools
 
-Upstream tools for 15+ platforms. Call them directly via shell commands.
+Upstream tools for 16+ platforms. Call them directly via shell commands.
 
 Run `openclaw agent-reach doctor` to check which platforms are available.
 
@@ -52,6 +59,74 @@ curl -s "https://r.jina.ai/URL"
 ```
 
 Returns clean Markdown of any web page. No API key needed.
+
+## Scrapling — Stealth Web Scraping
+
+For sites with anti-bot protection (Cloudflare, WAF) or dynamic JS pages. Use when curl/Jina fails.
+
+**Fast fetch (no browser, impersonates browser fingerprint):**
+
+```python
+python3 -c "
+from scrapling import Fetcher
+page = Fetcher().get('URL')
+print(page.get_all_text())
+"
+```
+
+**Stealth fetch (real browser, bypasses most anti-bot):**
+
+```python
+python3 -c "
+from scrapling import StealthyFetcher
+page = StealthyFetcher().fetch('URL', headless=True, network_idle=True)
+print(page.get_all_text())
+"
+```
+
+**Cloudflare-protected sites:**
+
+```python
+python3 -c "
+from scrapling import StealthyFetcher
+page = StealthyFetcher().fetch('URL', headless=True, solve_cloudflare=True)
+print(page.get_all_text())
+"
+```
+
+**Dynamic JS pages (SPA/React/Vue):**
+
+```python
+python3 -c "
+from scrapling import PlayWrightFetcher
+page = PlayWrightFetcher().fetch('URL', network_idle=True, disable_resources=True)
+print(page.get_all_text())
+"
+```
+
+**Extract specific elements with CSS selectors:**
+
+```python
+python3 -c "
+from scrapling import Fetcher
+page = Fetcher().get('URL')
+for item in page.css('.target-class'):
+    print(item.text())
+"
+```
+
+**With proxy:**
+
+```python
+python3 -c "
+from scrapling import StealthyFetcher
+page = StealthyFetcher().fetch('URL', headless=True, proxy='http://user:pass@host:port')
+print(page.get_all_text())
+"
+```
+
+> Install: `pip3 install "scrapling[all]" && scrapling install`
+> Use Scrapling when curl/Jina Reader returns 403/503 or empty content due to anti-bot protection.
 
 ## Web Search (Exa)
 
@@ -171,6 +246,8 @@ mcporter call 'linkedin.search_people(keyword: "AI engineer", limit: 10)'
 
 Fallback: `curl -s "https://r.jina.ai/https://linkedin.com/in/username"`
 
+Stealth fallback (if blocked): `python3 -c "from scrapling import StealthyFetcher; print(StealthyFetcher().fetch('https://linkedin.com/in/username', headless=True).get_all_text())"`
+
 ## Boss直聘 (mcporter)
 
 ```bash
@@ -179,6 +256,8 @@ mcporter call 'bosszhipin.search_jobs_tool(keyword: "Python", city: "北京")'
 ```
 
 Fallback: `curl -s "https://r.jina.ai/https://www.zhipin.com/job_detail/xxx"`
+
+Stealth fallback (if blocked): `python3 -c "from scrapling import StealthyFetcher; print(StealthyFetcher().fetch('https://www.zhipin.com/job_detail/xxx', headless=True).get_all_text())"`
 
 ## RSS
 

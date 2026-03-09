@@ -14,6 +14,7 @@ import { createImageTool } from "./tools/image-tool.js";
 import { createMessageTool } from "./tools/message-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
 import { createPdfTool } from "./tools/pdf-tool.js";
+import { createScraplingTool } from "./tools/scrapling-tool.js";
 import { createSessionStatusTool } from "./tools/session-status-tool.js";
 import { createSessionsHistoryTool } from "./tools/sessions-history-tool.js";
 import { createSessionsListTool } from "./tools/sessions-list-tool.js";
@@ -109,6 +110,7 @@ export function createOpenClawTools(options?: {
     config: options?.config,
     sandboxed: options?.sandboxed,
   });
+  const scraplingTool = createScraplingTool();
   const messageTool = options?.disableMessageTool
     ? null
     : createMessageTool({
@@ -192,6 +194,7 @@ export function createOpenClawTools(options?: {
     }),
     ...(webSearchTool ? [webSearchTool] : []),
     ...(webFetchTool ? [webFetchTool] : []),
+    ...(scraplingTool ? [scraplingTool] : []),
     ...(imageTool ? [imageTool] : []),
     ...(pdfTool ? [pdfTool] : []),
   ];
