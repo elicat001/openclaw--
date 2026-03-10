@@ -208,23 +208,15 @@ export function handleAdminApiRequest(
 
   const data = buildAdminDashboardData();
 
-  // Fetch agent-reach status asynchronously (native TS checks)
-  void getAgentReachStatus()
-    .then((arStatus) => {
-      data.agentReach = arStatus;
-      res.writeHead(200, {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache",
-      });
-      res.end(JSON.stringify(data));
-    })
-    .catch(() => {
-      data.agentReach = null;
-      res.writeHead(200, {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-cache",
-      });
-      res.end(JSON.stringify(data));
-    });
+  // Return cached agent-reach status immediately; refresh in background
+  data.agentReach = agentReachCache;
+  res.writeHead(200, {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-cache",
+  });
+  res.end(JSON.stringify(data));
+
+  // Refresh agent-reach cache in background for next request
+  void getAgentReachStatus().catch(() => {});
   return true;
 }
