@@ -46,8 +46,9 @@ const EXEC_TIMEOUT_MS = 60_000;
 /**
  * Python script that reads parameters from stdin as JSON.
  * This avoids string interpolation of user input into code, preventing injection.
+ * Exported for use by the escalation module.
  */
-const PYTHON_SCRIPT = `
+export const PYTHON_SCRIPT = `
 import json, sys, warnings
 warnings.filterwarnings("ignore")
 
@@ -85,7 +86,8 @@ else:
 print(json.dumps(result, ensure_ascii=False))
 `.trim();
 
-function runPython(
+/** Run a Python script with optional stdin data. Exported for use by the escalation module. */
+export function runPython(
   script: string,
   stdinData?: string,
 ): Promise<{ stdout: string; stderr: string }> {
@@ -160,4 +162,23 @@ export function createScraplingTool(): AnyAgentTool | null {
       }
     },
   };
+}
+
+let scraplingInstalledCache: boolean | undefined;
+
+/**
+ * Check whether the scrapling Python module is importable.
+ * Result is cached after the first check.
+ */
+export async function isScraplingInstalled(): Promise<boolean> {
+  if (scraplingInstalledCache !== undefined) {
+    return scraplingInstalledCache;
+  }
+  try {
+    await runPython('import scrapling; print("ok")');
+    scraplingInstalledCache = true;
+  } catch {
+    scraplingInstalledCache = false;
+  }
+  return scraplingInstalledCache;
 }

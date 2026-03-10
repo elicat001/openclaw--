@@ -9,6 +9,11 @@ import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
 import { stringEnum } from "../schema/typebox.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
+import { getActiveCrawlSession } from "./crawl-session.js";
+import { isScraplingInstalled } from "./scrapling-tool.js";
+import { runWithEscalation, type EscalationStep } from "./web-fetch-escalation.js";
+import { buildBrowserHeaders, pickUserAgent } from "./web-fetch-headers.js";
+import { createDomainRateLimiter, extractDomain } from "./web-fetch-rate-limit.js";
 import {
   extractReadableContent,
   htmlToMarkdown,
@@ -43,10 +48,14 @@ const DEFAULT_ERROR_MAX_CHARS = 4_000;
 const DEFAULT_ERROR_MAX_BYTES = 64_000;
 const DEFAULT_FIRECRAWL_BASE_URL = "https://api.firecrawl.dev";
 const DEFAULT_FIRECRAWL_MAX_AGE_MS = 172_800_000;
-const DEFAULT_FETCH_USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+/** @deprecated Use pickUserAgent() for rotation; kept as fallback for config override. */
+const _DEFAULT_FETCH_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 const FETCH_CACHE = new Map<string, CacheEntry<Record<string, unknown>>>();
+
+/** Singleton domain rate limiter, lazily reconfigured per createWebFetchTool. */
+let domainRateLimiter = createDomainRateLimiter();
 
 const WebFetchSchema = Type.Object({
   url: Type.String({ description: "HTTP or HTTPS URL to fetch." }),
@@ -452,6 +461,9 @@ type WebFetchRuntimeParams = FirecrawlRuntimeParams & {
   cacheTtlMs: number;
   userAgent: string;
   readabilityEnabled: boolean;
+  autoEscalation: boolean;
+  maxBlockRetries: number;
+  scraplingAvailable: boolean;
 };
 
 function toFirecrawlContentParams(
@@ -524,34 +536,110 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
     throw new Error("Invalid URL: must be http or https");
   }
 
+  // Per-domain rate limiting
+  await domainRateLimiter.waitForSlot(extractDomain(params.url));
+
+  // Crawl session pacing: pre-fetch delay (human-like page turn wait)
+  const crawlSession = getActiveCrawlSession();
+  if (crawlSession && !crawlSession.pacer.isAborted()) {
+    await crawlSession.pacer.beforePageTurn();
+  }
+
   const start = Date.now();
+
+  let result: Record<string, unknown>;
+
+  // If auto-escalation is enabled, run through the escalation chain
+  if (params.autoEscalation) {
+    result = await runWebFetchWithEscalation(params, cacheKey, start);
+  } else {
+    // Legacy path: no escalation
+    result = await runWebFetchDirect(params, cacheKey, start);
+  }
+
+  // Crawl session pacing: post-fetch processing
+  if (crawlSession && !crawlSession.pacer.isAborted()) {
+    const status = typeof result.status === "number" ? result.status : 200;
+    const body = typeof result.text === "string" ? result.text : "";
+
+    // Anomaly detection on the fetched page
+    const anomaly = await crawlSession.pacer.afterPageLoad({
+      status,
+      body,
+      loadTimeMs: typeof result.tookMs === "number" ? result.tookMs : undefined,
+      url: params.url,
+    });
+
+    if (anomaly.detected) {
+      result.crawlAnomaly = {
+        type: anomaly.type,
+        severity: anomaly.severity,
+        reason: anomaly.reason,
+      };
+    }
+
+    if (crawlSession.pacer.isAborted()) {
+      result.crawlSessionAborted = true;
+      result.crawlAbortReason = `Session aborted due to repeated anomalies`;
+    } else {
+      // Simulate reading the page
+      await crawlSession.pacer.simulateReading();
+
+      // Occasionally click detail (randomized)
+      await crawlSession.pacer.maybeClickDetail();
+
+      // Record one item fetched
+      crawlSession.pacer.recordItems(1);
+
+      // Batch rest if needed
+      if (crawlSession.pacer.shouldRestBatch()) {
+        logDebug("[web-fetch] Crawl session batch rest triggered");
+        await crawlSession.pacer.batchRest();
+      }
+
+      // Session limit check
+      if (crawlSession.pacer.hasReachedSessionLimit()) {
+        result.crawlSessionLimitReached = true;
+        result.crawlMessage = `Session item limit (${crawlSession.profile.maxItemsPerSession}) reached. Stop and start a new session.`;
+      }
+    }
+
+    // Attach crawl session info
+    result.crawlSession = {
+      id: crawlSession.id,
+      itemsFetched: crawlSession.pacer.getState().itemsFetched,
+      batchNumber: crawlSession.pacer.getState().batchNumber,
+      profile: crawlSession.profile.name,
+    };
+  }
+
+  return result;
+}
+
+/** Direct fetch path (legacy, no escalation). */
+async function runWebFetchDirect(
+  params: WebFetchRuntimeParams,
+  cacheKey: string,
+  start: number,
+): Promise<Record<string, unknown>> {
   let res: Response;
   let release: (() => Promise<void>) | null = null;
   let finalUrl = params.url;
+  const headers = buildBrowserHeaders({
+    userAgent: params.userAgent,
+    acceptMarkdown: true,
+  });
   try {
     const result = await fetchWithWebToolsNetworkGuard({
       url: params.url,
       maxRedirects: params.maxRedirects,
       timeoutSeconds: params.timeoutSeconds,
-      init: {
-        headers: {
-          Accept: "text/markdown, text/html;q=0.9, */*;q=0.1",
-          "User-Agent": params.userAgent,
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-      },
+      init: { headers },
     });
     res = result.response;
     finalUrl = result.finalUrl;
     release = result.release;
-
-    // Cloudflare Markdown for Agents — log token budget hint when present
-    const markdownTokens = res.headers.get("x-markdown-tokens");
-    if (markdownTokens) {
-      logDebug(
-        `[web-fetch] x-markdown-tokens: ${markdownTokens} (${redactUrlForDebugLog(finalUrl)})`,
-      );
-    }
+    logCfMarkdownTokens(res, finalUrl);
   } catch (error) {
     if (error instanceof SsrFBlockedError) {
       throw error;
@@ -571,115 +659,281 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
   }
 
   try {
-    if (!res.ok) {
-      const payload = await maybeFetchFirecrawlWebFetchPayload({
-        ...params,
-        urlToFetch: params.url,
-        finalUrlFallback: finalUrl,
-        statusFallback: res.status,
-        cacheKey,
-        tookMs: Date.now() - start,
-      });
-      if (payload) {
-        return payload;
-      }
-      const rawDetailResult = await readResponseText(res, { maxBytes: DEFAULT_ERROR_MAX_BYTES });
-      const rawDetail = rawDetailResult.text;
-      const detail = formatWebFetchErrorDetail({
-        detail: rawDetail,
-        contentType: res.headers.get("content-type"),
-        maxChars: DEFAULT_ERROR_MAX_CHARS,
-      });
-      const wrappedDetail = wrapWebFetchContent(detail || res.statusText, DEFAULT_ERROR_MAX_CHARS);
-      throw new Error(`Web fetch failed (${res.status}): ${wrappedDetail.text}`);
-    }
-
-    const contentType = res.headers.get("content-type") ?? "application/octet-stream";
-    const normalizedContentType = normalizeContentType(contentType) ?? "application/octet-stream";
-    const bodyResult = await readResponseText(res, { maxBytes: params.maxResponseBytes });
-    const body = bodyResult.text;
-    const responseTruncatedWarning = bodyResult.truncated
-      ? `Response body truncated after ${params.maxResponseBytes} bytes.`
-      : undefined;
-
-    let title: string | undefined;
-    let extractor = "raw";
-    let text = body;
-    if (contentType.includes("text/markdown")) {
-      // Cloudflare Markdown for Agents: server returned pre-rendered markdown
-      extractor = "cf-markdown";
-      if (params.extractMode === "text") {
-        text = markdownToText(body);
-      }
-    } else if (contentType.includes("text/html")) {
-      if (params.readabilityEnabled) {
-        const readable = await extractReadableContent({
-          html: body,
-          url: finalUrl,
-          extractMode: params.extractMode,
-        });
-        if (readable?.text) {
-          text = readable.text;
-          title = readable.title;
-          extractor = "readability";
-        } else {
-          const firecrawl = await tryFirecrawlFallback({ ...params, url: finalUrl });
-          if (firecrawl) {
-            text = firecrawl.text;
-            title = firecrawl.title;
-            extractor = "firecrawl";
-          } else {
-            throw new Error(
-              "Web fetch extraction failed: Readability and Firecrawl returned no content.",
-            );
-          }
-        }
-      } else {
-        throw new Error(
-          "Web fetch extraction failed: Readability disabled and Firecrawl unavailable.",
-        );
-      }
-    } else if (contentType.includes("application/json")) {
-      try {
-        text = JSON.stringify(JSON.parse(body), null, 2);
-        extractor = "json";
-      } catch {
-        text = body;
-        extractor = "raw";
-      }
-    }
-
-    const wrapped = wrapWebFetchContent(text, params.maxChars);
-    const wrappedTitle = title ? wrapWebFetchField(title) : undefined;
-    const wrappedWarning = wrapWebFetchField(responseTruncatedWarning);
-    const payload = {
-      url: params.url, // Keep raw for tool chaining
-      finalUrl, // Keep raw
-      status: res.status,
-      contentType: normalizedContentType, // Protocol metadata, don't wrap
-      title: wrappedTitle,
-      extractMode: params.extractMode,
-      extractor,
-      externalContent: {
-        untrusted: true,
-        source: "web_fetch",
-        wrapped: true,
-      },
-      truncated: wrapped.truncated,
-      length: wrapped.wrappedLength,
-      rawLength: wrapped.rawLength, // Actual content length, not wrapped
-      wrappedLength: wrapped.wrappedLength,
-      fetchedAt: new Date().toISOString(),
-      tookMs: Date.now() - start,
-      text: wrapped.text,
-      warning: wrappedWarning,
-    };
-    writeCache(FETCH_CACHE, cacheKey, payload, params.cacheTtlMs);
-    return payload;
+    return await processDirectResponse(params, res, finalUrl, cacheKey, start);
   } finally {
     if (release) {
       await release();
     }
+  }
+}
+
+/** Fetch with automatic anti-bot escalation. */
+async function runWebFetchWithEscalation(
+  params: WebFetchRuntimeParams,
+  cacheKey: string,
+  start: number,
+): Promise<Record<string, unknown>> {
+  const firecrawlAvailable = params.firecrawlEnabled && Boolean(params.firecrawlApiKey);
+
+  const escalationResult = await runWithEscalation({
+    url: params.url,
+    maxChars: params.maxChars,
+    config: {
+      maxBlockRetries: params.maxBlockRetries,
+      scraplingAvailable: params.scraplingAvailable,
+      firecrawlAvailable,
+    },
+    directFetch: async ({ headers: escalationHeaders }) => {
+      const mergedHeaders = {
+        ...buildBrowserHeaders({ userAgent: params.userAgent, acceptMarkdown: true }),
+        ...escalationHeaders,
+      };
+      const result = await fetchWithWebToolsNetworkGuard({
+        url: params.url,
+        maxRedirects: params.maxRedirects,
+        timeoutSeconds: params.timeoutSeconds,
+        init: { headers: mergedHeaders },
+      });
+      logCfMarkdownTokens(result.response, result.finalUrl);
+      const bodyResult = await readResponseText(result.response, {
+        maxBytes: params.maxResponseBytes,
+      });
+      await result.release();
+      return {
+        status: result.response.status,
+        headers: result.response.headers,
+        body: bodyResult.text,
+        contentType: result.response.headers.get("content-type") ?? undefined,
+      };
+    },
+    firecrawlFallback: async () => {
+      return await maybeFetchFirecrawlWebFetchPayload({
+        ...params,
+        urlToFetch: params.url,
+        finalUrlFallback: params.url,
+        statusFallback: 200,
+        cacheKey,
+        tookMs: Date.now() - start,
+      });
+    },
+  });
+
+  const escalationPath = escalationResult.escalationPath;
+
+  if (escalationResult.type === "firecrawl") {
+    return { ...escalationResult.payload, escalationPath };
+  }
+
+  if (escalationResult.type === "scrapling") {
+    // Build a standard payload from scrapling text
+    const wrapped = wrapWebFetchContent(escalationResult.text, params.maxChars);
+    const payload: Record<string, unknown> = {
+      url: params.url,
+      finalUrl: params.url,
+      status: escalationResult.status,
+      contentType: "text/plain",
+      extractMode: params.extractMode,
+      extractor: `scrapling-${escalationResult.mode}`,
+      externalContent: { untrusted: true, source: "web_fetch", wrapped: true },
+      truncated: wrapped.truncated,
+      length: wrapped.wrappedLength,
+      rawLength: wrapped.rawLength,
+      wrappedLength: wrapped.wrappedLength,
+      fetchedAt: new Date().toISOString(),
+      tookMs: Date.now() - start,
+      text: wrapped.text,
+      escalationPath,
+    };
+    writeCache(FETCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+    return payload;
+  }
+
+  // type === "direct" — process the successful direct response body
+  const { status, headers: _resHeaders, body, contentType: rawContentType } = escalationResult;
+  const contentType = rawContentType ?? "application/octet-stream";
+  const normalizedContentType = normalizeContentType(contentType) ?? "application/octet-stream";
+
+  // Check for non-ok status that wasn't caught by escalation (shouldn't happen often)
+  if (status >= 400) {
+    const detail = formatWebFetchErrorDetail({
+      detail: body,
+      contentType,
+      maxChars: DEFAULT_ERROR_MAX_CHARS,
+    });
+    const wrappedDetail = wrapWebFetchContent(detail || String(status), DEFAULT_ERROR_MAX_CHARS);
+    throw new Error(`Web fetch failed (${status}): ${wrappedDetail.text}`);
+  }
+
+  return buildSuccessPayload({
+    params,
+    body,
+    contentType,
+    normalizedContentType,
+    finalUrl: params.url,
+    status,
+    cacheKey,
+    start,
+    escalationPath,
+    responseTruncated: false,
+  });
+}
+
+/** Extract content and build the standard success payload. */
+async function buildSuccessPayload(args: {
+  params: WebFetchRuntimeParams;
+  body: string;
+  contentType: string;
+  normalizedContentType: string;
+  finalUrl: string;
+  status: number;
+  cacheKey: string;
+  start: number;
+  escalationPath?: EscalationStep[];
+  responseTruncated: boolean;
+}): Promise<Record<string, unknown>> {
+  const {
+    params,
+    body,
+    contentType,
+    normalizedContentType,
+    finalUrl,
+    status,
+    cacheKey,
+    start,
+    escalationPath,
+    responseTruncated,
+  } = args;
+  const responseTruncatedWarning = responseTruncated
+    ? `Response body truncated after ${params.maxResponseBytes} bytes.`
+    : undefined;
+
+  let title: string | undefined;
+  let extractor = "raw";
+  let text = body;
+  if (contentType.includes("text/markdown")) {
+    extractor = "cf-markdown";
+    if (params.extractMode === "text") {
+      text = markdownToText(body);
+    }
+  } else if (contentType.includes("text/html")) {
+    if (params.readabilityEnabled) {
+      const readable = await extractReadableContent({
+        html: body,
+        url: finalUrl,
+        extractMode: params.extractMode,
+      });
+      if (readable?.text) {
+        text = readable.text;
+        title = readable.title;
+        extractor = "readability";
+      } else {
+        const firecrawl = await tryFirecrawlFallback({ ...params, url: finalUrl });
+        if (firecrawl) {
+          text = firecrawl.text;
+          title = firecrawl.title;
+          extractor = "firecrawl";
+        } else {
+          throw new Error(
+            "Web fetch extraction failed: Readability and Firecrawl returned no content.",
+          );
+        }
+      }
+    } else {
+      throw new Error(
+        "Web fetch extraction failed: Readability disabled and Firecrawl unavailable.",
+      );
+    }
+  } else if (contentType.includes("application/json")) {
+    try {
+      text = JSON.stringify(JSON.parse(body), null, 2);
+      extractor = "json";
+    } catch {
+      text = body;
+      extractor = "raw";
+    }
+  }
+
+  const wrapped = wrapWebFetchContent(text, params.maxChars);
+  const wrappedTitle = title ? wrapWebFetchField(title) : undefined;
+  const wrappedWarning = wrapWebFetchField(responseTruncatedWarning);
+  const payload: Record<string, unknown> = {
+    url: params.url,
+    finalUrl,
+    status,
+    contentType: normalizedContentType,
+    title: wrappedTitle,
+    extractMode: params.extractMode,
+    extractor,
+    externalContent: { untrusted: true, source: "web_fetch", wrapped: true },
+    truncated: wrapped.truncated,
+    length: wrapped.wrappedLength,
+    rawLength: wrapped.rawLength,
+    wrappedLength: wrapped.wrappedLength,
+    fetchedAt: new Date().toISOString(),
+    tookMs: Date.now() - start,
+    text: wrapped.text,
+    warning: wrappedWarning,
+  };
+  if (escalationPath?.length) {
+    payload.escalationPath = escalationPath;
+  }
+  writeCache(FETCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+  return payload;
+}
+
+/** Process a direct (non-escalated) Response into a standard payload. */
+async function processDirectResponse(
+  params: WebFetchRuntimeParams,
+  res: Response,
+  finalUrl: string,
+  cacheKey: string,
+  start: number,
+): Promise<Record<string, unknown>> {
+  if (!res.ok) {
+    const payload = await maybeFetchFirecrawlWebFetchPayload({
+      ...params,
+      urlToFetch: params.url,
+      finalUrlFallback: finalUrl,
+      statusFallback: res.status,
+      cacheKey,
+      tookMs: Date.now() - start,
+    });
+    if (payload) {
+      return payload;
+    }
+    const rawDetailResult = await readResponseText(res, { maxBytes: DEFAULT_ERROR_MAX_BYTES });
+    const detail = formatWebFetchErrorDetail({
+      detail: rawDetailResult.text,
+      contentType: res.headers.get("content-type"),
+      maxChars: DEFAULT_ERROR_MAX_CHARS,
+    });
+    const wrappedDetail = wrapWebFetchContent(detail || res.statusText, DEFAULT_ERROR_MAX_CHARS);
+    throw new Error(`Web fetch failed (${res.status}): ${wrappedDetail.text}`);
+  }
+
+  const contentType = res.headers.get("content-type") ?? "application/octet-stream";
+  const normalizedContentType = normalizeContentType(contentType) ?? "application/octet-stream";
+  const bodyResult = await readResponseText(res, { maxBytes: params.maxResponseBytes });
+
+  return buildSuccessPayload({
+    params,
+    body: bodyResult.text,
+    contentType,
+    normalizedContentType,
+    finalUrl,
+    status: res.status,
+    cacheKey,
+    start,
+    responseTruncated: bodyResult.truncated,
+  });
+}
+
+function logCfMarkdownTokens(res: Response, finalUrl: string): void {
+  const markdownTokens = res.headers.get("x-markdown-tokens");
+  if (markdownTokens) {
+    logDebug(
+      `[web-fetch] x-markdown-tokens: ${markdownTokens} (${redactUrlForDebugLog(finalUrl)})`,
+    );
   }
 }
 
@@ -743,15 +997,38 @@ export function createWebFetchTool(options?: {
   );
   const userAgent =
     (fetch && "userAgent" in fetch && typeof fetch.userAgent === "string" && fetch.userAgent) ||
-    DEFAULT_FETCH_USER_AGENT;
+    pickUserAgent();
   const maxResponseBytes = resolveFetchMaxResponseBytes(fetch);
+
+  // Anti-bot escalation config
+  const autoEscalation = fetch?.autoEscalation !== false;
+  const maxBlockRetries =
+    typeof fetch?.maxBlockRetries === "number" ? Math.max(0, fetch.maxBlockRetries) : 2;
+
+  // Reconfigure domain rate limiter if custom settings provided
+  if (fetch?.rateLimitMaxRequests || fetch?.rateLimitWindowMs) {
+    domainRateLimiter = createDomainRateLimiter({
+      maxRequests: fetch.rateLimitMaxRequests,
+      windowMs: fetch.rateLimitWindowMs,
+    });
+  }
+
+  // Check scrapling availability once (cached)
+  let scraplingAvailable = false;
+  const scraplingCheck = autoEscalation
+    ? isScraplingInstalled().then((v) => {
+        scraplingAvailable = v;
+      })
+    : Promise.resolve();
+
   return {
     label: "Web Fetch",
     name: "web_fetch",
     description:
-      "Fetch and extract readable content from a URL (HTML → markdown/text). Use for lightweight page access without browser automation.",
+      "Fetch and extract readable content from a URL (HTML → markdown/text). Use for lightweight page access without browser automation. Automatically bypasses anti-bot protections when detected.",
     parameters: WebFetchSchema,
     execute: async (_toolCallId, args) => {
+      await scraplingCheck;
       const params = args as Record<string, unknown>;
       const url = readStringParam(params, "url", { required: true });
       const extractMode = readStringParam(params, "extractMode") === "text" ? "text" : "markdown";
@@ -779,6 +1056,9 @@ export function createWebFetchTool(options?: {
         firecrawlProxy: "auto",
         firecrawlStoreInCache: true,
         firecrawlTimeoutSeconds,
+        autoEscalation,
+        maxBlockRetries,
+        scraplingAvailable,
       });
       return jsonResult(result);
     },

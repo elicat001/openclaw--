@@ -508,6 +508,16 @@ export type ToolsConfig = {
       userAgent?: string;
       /** Use Readability to extract main content (default: true). */
       readability?: boolean;
+      /** Per-domain rate limit: max requests per window (default: 10). */
+      rateLimitMaxRequests?: number;
+      /** Per-domain rate limit: window duration in ms (default: 60000). */
+      rateLimitWindowMs?: number;
+      /** Enable automatic escalation to scrapling when blocked (default: true). */
+      autoEscalation?: boolean;
+      /** Maximum retry attempts for blocked requests before escalating (default: 2). */
+      maxBlockRetries?: number;
+      /** Crawl behavior profile: "conservative", "balanced", or "aggressive" (default: "balanced"). */
+      crawlProfile?: "conservative" | "balanced" | "aggressive";
       firecrawl?: {
         /** Enable Firecrawl fallback (default: true when apiKey is set). */
         enabled?: boolean;
