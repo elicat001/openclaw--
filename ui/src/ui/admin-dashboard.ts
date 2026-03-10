@@ -159,10 +159,21 @@ export class AdminDashboard extends LitElement {
     void this.refresh();
   }
 
+  private getToken(): string | null {
+    const hash = location.hash.replace(/^#/, "");
+    const match = hash.match(/(?:^|&)token=([^&]+)/);
+    return match ? match[1] : null;
+  }
+
   async refresh() {
     this.loading = true;
     try {
-      const response = await fetch("/api/admin/status");
+      const headers: Record<string, string> = {};
+      const token = this.getToken();
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+      const response = await fetch("/api/admin/status", { headers });
       if (response.ok) {
         this.data = await response.json();
       }

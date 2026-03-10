@@ -206,8 +206,9 @@ export class OpenClawApp extends LitElement {
       const base = this.settings.gatewayUrl?.replace(/^ws/, "http") ?? `http://127.0.0.1:18789`;
       const url = `${base}/api/admin/status`;
       const headers: Record<string, string> = { Accept: "application/json" };
-      if (this.password.trim()) {
-        headers.Authorization = `Bearer ${this.password.trim()}`;
+      const authSecret = this.settings.token.trim() || this.password.trim();
+      if (authSecret) {
+        headers.Authorization = `Bearer ${authSecret}`;
       }
       const res = await fetch(url, { headers });
       if (!res.ok) {
