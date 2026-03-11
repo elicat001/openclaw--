@@ -17,6 +17,8 @@ export type DomainProfile = {
   warmupPath: string | null;
   /** Whether this domain requires cookie persistence to function. */
   requiresCookies: boolean;
+  /** Preferred proxy tier for this domain. */
+  proxyTier?: "residential" | "datacenter" | "any";
 };
 
 // ── Known anti-bot domains ────────────────────────────────────────
@@ -24,52 +26,91 @@ export type DomainProfile = {
 const KNOWN_DOMAIN_PROFILES: DomainProfile[] = [
   {
     patterns: ["shopee.*", "*.shopee.*"],
-    defaultMode: "scrapling_stealth",
+    defaultMode: "tls_impersonate",
     crawlProfile: "conservative",
     warmupPath: "/",
     requiresCookies: true,
+    proxyTier: "residential",
   },
   {
     patterns: ["lazada.*", "*.lazada.*"],
-    defaultMode: "scrapling_stealth",
+    defaultMode: "tls_impersonate",
     crawlProfile: "conservative",
     warmupPath: "/",
     requiresCookies: true,
+    proxyTier: "residential",
   },
   {
     patterns: ["amazon.*", "*.amazon.*", "amzn.*"],
-    defaultMode: "scrapling_stealth",
+    defaultMode: "tls_impersonate",
     crawlProfile: "conservative",
     warmupPath: "/",
     requiresCookies: true,
+    proxyTier: "residential",
   },
   {
     patterns: ["aliexpress.*", "*.aliexpress.*"],
-    defaultMode: "scrapling_stealth",
+    defaultMode: "tls_impersonate",
     crawlProfile: "balanced",
     warmupPath: "/",
     requiresCookies: true,
+    proxyTier: "datacenter",
   },
   {
     patterns: ["ebay.*", "*.ebay.*"],
-    defaultMode: "scrapling_stealth",
+    defaultMode: "tls_impersonate",
     crawlProfile: "balanced",
     warmupPath: "/",
     requiresCookies: true,
+    proxyTier: "datacenter",
   },
   {
     patterns: ["linkedin.com", "*.linkedin.com"],
-    defaultMode: "scrapling_stealth",
+    defaultMode: "tls_impersonate",
     crawlProfile: "conservative",
     warmupPath: null,
     requiresCookies: true,
+    proxyTier: "residential",
   },
   {
     patterns: ["indeed.com", "*.indeed.*"],
-    defaultMode: "scrapling_stealth",
+    defaultMode: "tls_impersonate",
     crawlProfile: "balanced",
     warmupPath: "/",
     requiresCookies: true,
+    proxyTier: "datacenter",
+  },
+  {
+    patterns: ["walmart.com", "*.walmart.com"],
+    defaultMode: "tls_impersonate",
+    crawlProfile: "conservative",
+    warmupPath: "/",
+    requiresCookies: true,
+    proxyTier: "residential",
+  },
+  {
+    patterns: ["target.com", "*.target.com"],
+    defaultMode: "tls_impersonate",
+    crawlProfile: "balanced",
+    warmupPath: "/",
+    requiresCookies: true,
+    proxyTier: "datacenter",
+  },
+  {
+    patterns: ["mercadolibre.*", "*.mercadolibre.*", "mercadolivre.*", "*.mercadolivre.*"],
+    defaultMode: "tls_impersonate",
+    crawlProfile: "balanced",
+    warmupPath: "/",
+    requiresCookies: true,
+    proxyTier: "residential",
+  },
+  {
+    patterns: ["tokopedia.com", "*.tokopedia.com"],
+    defaultMode: "tls_impersonate",
+    crawlProfile: "conservative",
+    warmupPath: "/",
+    requiresCookies: true,
+    proxyTier: "residential",
   },
 ];
 
@@ -121,48 +162,7 @@ export function resolveStartStrategy(hostname: string): EscalationStrategy {
   return profile?.defaultMode ?? "direct";
 }
 
-// ── Proxy Pool Interface (stub for future integration) ───────────
+// ── Proxy Pool (re-export from dedicated module) ─────────────────
 
-export type ProxyConfig = {
-  url: string;
-  region?: string;
-  protocol?: "http" | "socks5";
-  maxConcurrent?: number;
-  cooldownMs?: number;
-};
-
-export type ProxyPool = {
-  getProxy(domain: string): ProxyConfig | null;
-  markFailed(proxy: ProxyConfig): void;
-  markSuccess(proxy: ProxyConfig): void;
-  addProxies(proxies: ProxyConfig[]): void;
-};
-
-/** Create a proxy pool. Returns null from getProxy when no proxies are configured. */
-export function createProxyPool(proxies?: ProxyConfig[]): ProxyPool {
-  const pool = [...(proxies ?? [])];
-  const failures = new Map<string, number>();
-
-  return {
-    getProxy(_domain: string): ProxyConfig | null {
-      if (pool.length === 0) {
-        return null;
-      }
-      // Simple round-robin, skip failed proxies
-      const available = pool.filter((p) => (failures.get(p.url) ?? 0) < 3);
-      if (available.length === 0) {
-        return null;
-      }
-      return available[Math.floor(Math.random() * available.length)];
-    },
-    markFailed(proxy: ProxyConfig): void {
-      failures.set(proxy.url, (failures.get(proxy.url) ?? 0) + 1);
-    },
-    markSuccess(proxy: ProxyConfig): void {
-      failures.delete(proxy.url);
-    },
-    addProxies(newProxies: ProxyConfig[]): void {
-      pool.push(...newProxies);
-    },
-  };
-}
+export { createProxyPool } from "./web-fetch-proxy-pool.js";
+export type { ProxyConfig, ProxyPool } from "./web-fetch-proxy-pool.js";

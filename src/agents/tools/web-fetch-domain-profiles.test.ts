@@ -9,7 +9,7 @@ describe("matchDomainProfile", () => {
   test("matches shopee domains", () => {
     const profile = matchDomainProfile("shopee.com.br");
     expect(profile).not.toBeNull();
-    expect(profile!.defaultMode).toBe("scrapling_stealth");
+    expect(profile!.defaultMode).toBe("tls_impersonate");
     expect(profile!.crawlProfile).toBe("conservative");
     expect(profile!.warmupPath).toBe("/");
   });
@@ -17,7 +17,7 @@ describe("matchDomainProfile", () => {
   test("matches shopee subdomains", () => {
     const profile = matchDomainProfile("mall.shopee.com.br");
     expect(profile).not.toBeNull();
-    expect(profile!.defaultMode).toBe("scrapling_stealth");
+    expect(profile!.defaultMode).toBe("tls_impersonate");
   });
 
   test("matches amazon domains", () => {
@@ -38,8 +38,8 @@ describe("matchDomainProfile", () => {
 
 describe("resolveStartStrategy", () => {
   test("returns stealth for known anti-bot domains", () => {
-    expect(resolveStartStrategy("shopee.com.br")).toBe("scrapling_stealth");
-    expect(resolveStartStrategy("amazon.com")).toBe("scrapling_stealth");
+    expect(resolveStartStrategy("shopee.com.br")).toBe("tls_impersonate");
+    expect(resolveStartStrategy("amazon.com")).toBe("tls_impersonate");
   });
 
   test("returns direct for unknown domains", () => {

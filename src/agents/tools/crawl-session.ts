@@ -26,7 +26,8 @@
 import { logDebug } from "../../logger.js";
 import { type CrawlBehaviorProfile, resolveCrawlProfile } from "./crawl-behavior-profile.js";
 import { createCrawlPacer, type CrawlPacer } from "./crawl-pacing.js";
-import { type CookieJar, createCookieJar } from "./web-fetch-cookie-jar.js";
+import type { CookieJar } from "./web-fetch-cookie-jar.js";
+import { createPersistentCookieStore } from "./web-fetch-cookie-store.js";
 import {
   type BrowserIdentity,
   buildIdentityHeaders,
@@ -158,7 +159,15 @@ export function acquireCrawlSession(config: CrawlSessionConfig): CrawlSession | 
   const pacer = createCrawlPacer(resolvedProfile);
 
   const identity = createBrowserIdentity();
-  const cookieJar = createCookieJar();
+
+  // Use persistent cookie store (SQLite-backed) with fallback to in-memory
+  const cookieStore = createPersistentCookieStore();
+  const cookieJar: CookieJar = cookieStore;
+
+  // Load existing cookies for the target domain
+  if (config.site) {
+    cookieStore.loadDomain(config.site);
+  }
 
   const session: CrawlSession = {
     id,
@@ -235,6 +244,15 @@ export function acquireCrawlSession(config: CrawlSessionConfig): CrawlSession | 
         return;
       }
       this.active = false;
+
+      // Persist cookies to SQLite before closing
+      try {
+        cookieStore.persist();
+        cookieStore.close();
+      } catch {
+        // Best-effort persistence
+      }
+
       const durationSec = (Date.now() - this.startedAt) / 1000;
       const pacerState = this.pacer.getState();
       logDebug(

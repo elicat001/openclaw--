@@ -14,6 +14,8 @@ export type BlockReason =
 
 export type EscalationSuggestion =
   | "retry_with_new_headers"
+  | "tls_impersonate"
+  | "camoufox_stealth"
   | "scrapling_fast"
   | "scrapling_stealth";
 
@@ -189,23 +191,23 @@ export function detectBlock(params: {
     };
   }
 
-  // WAF block
+  // WAF block — try TLS impersonation first (faster than browser engines)
   if (detectWafBlock({ status, body })) {
     return {
       blocked: true,
       reason: "waf_block",
       retryable: true,
-      suggestedEscalation: "scrapling_fast",
+      suggestedEscalation: "tls_impersonate",
     };
   }
 
-  // Access denied
+  // Access denied — try TLS impersonation first
   if (detectAccessDenied({ status, body })) {
     return {
       blocked: true,
       reason: "access_denied",
       retryable: true,
-      suggestedEscalation: "scrapling_fast",
+      suggestedEscalation: "tls_impersonate",
     };
   }
 

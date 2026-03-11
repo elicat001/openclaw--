@@ -11,6 +11,7 @@ import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
 import { getActiveCrawlSession } from "./crawl-session.js";
 import { isScraplingInstalled } from "./scrapling-tool.js";
+import { isCamoufoxInstalled } from "./web-fetch-camoufox-engine.js";
 import { matchDomainProfile } from "./web-fetch-domain-profiles.js";
 import {
   performSessionWarmup,
@@ -18,7 +19,9 @@ import {
   type EscalationStep,
 } from "./web-fetch-escalation.js";
 import { buildBrowserHeaders, pickUserAgent } from "./web-fetch-headers.js";
+import { createProxyPool, type ProxyPool } from "./web-fetch-proxy-pool.js";
 import { createDomainRateLimiter, extractDomain } from "./web-fetch-rate-limit.js";
+import { isCurlCffiInstalled } from "./web-fetch-tls-engine.js";
 import {
   extractReadableContent,
   htmlToMarkdown,
@@ -469,6 +472,9 @@ type WebFetchRuntimeParams = FirecrawlRuntimeParams & {
   autoEscalation: boolean;
   maxBlockRetries: number;
   scraplingAvailable: boolean;
+  tlsEngineAvailable: boolean;
+  camoufoxAvailable: boolean;
+  proxyPool: ProxyPool;
 };
 
 function toFirecrawlContentParams(
@@ -725,6 +731,9 @@ async function runWebFetchWithEscalation(
       maxBlockRetries: params.maxBlockRetries,
       scraplingAvailable: params.scraplingAvailable,
       firecrawlAvailable,
+      tlsEngineAvailable: params.tlsEngineAvailable,
+      camoufoxAvailable: params.camoufoxAvailable,
+      proxyPool: params.proxyPool.size > 0 ? params.proxyPool : undefined,
     },
     sessionState,
     directFetch: async ({ headers: escalationHeaders }) => {
@@ -782,6 +791,52 @@ async function runWebFetchWithEscalation(
       contentType: "text/plain",
       extractMode: params.extractMode,
       extractor: `scrapling-${escalationResult.mode}`,
+      externalContent: { untrusted: true, source: "web_fetch", wrapped: true },
+      truncated: wrapped.truncated,
+      length: wrapped.wrappedLength,
+      rawLength: wrapped.rawLength,
+      wrappedLength: wrapped.wrappedLength,
+      fetchedAt: new Date().toISOString(),
+      tookMs: Date.now() - start,
+      text: wrapped.text,
+      escalationPath,
+    };
+    writeCache(FETCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+    return payload;
+  }
+
+  if (escalationResult.type === "tls_impersonate") {
+    const wrapped = wrapWebFetchContent(escalationResult.body, params.maxChars);
+    const payload: Record<string, unknown> = {
+      url: params.url,
+      finalUrl: params.url,
+      status: escalationResult.status,
+      contentType: "text/html",
+      extractMode: params.extractMode,
+      extractor: "tls-impersonate",
+      externalContent: { untrusted: true, source: "web_fetch", wrapped: true },
+      truncated: wrapped.truncated,
+      length: wrapped.wrappedLength,
+      rawLength: wrapped.rawLength,
+      wrappedLength: wrapped.wrappedLength,
+      fetchedAt: new Date().toISOString(),
+      tookMs: Date.now() - start,
+      text: wrapped.text,
+      escalationPath,
+    };
+    writeCache(FETCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+    return payload;
+  }
+
+  if (escalationResult.type === "camoufox") {
+    const wrapped = wrapWebFetchContent(escalationResult.text, params.maxChars);
+    const payload: Record<string, unknown> = {
+      url: params.url,
+      finalUrl: params.url,
+      status: escalationResult.status,
+      contentType: "text/html",
+      extractMode: params.extractMode,
+      extractor: "camoufox-stealth",
       externalContent: { untrusted: true, source: "web_fetch", wrapped: true },
       truncated: wrapped.truncated,
       length: wrapped.wrappedLength,
@@ -1061,13 +1116,26 @@ export function createWebFetchTool(options?: {
     });
   }
 
-  // Check scrapling availability once (cached)
+  // Check tool availability once (cached)
   let scraplingAvailable = false;
-  const scraplingCheck = autoEscalation
-    ? isScraplingInstalled().then((v) => {
-        scraplingAvailable = v;
-      })
+  let tlsEngineAvailable = false;
+  let camoufoxAvailable = false;
+  const availabilityChecks = autoEscalation
+    ? Promise.all([
+        isScraplingInstalled().then((v) => {
+          scraplingAvailable = v;
+        }),
+        isCurlCffiInstalled().then((v) => {
+          tlsEngineAvailable = v;
+        }),
+        isCamoufoxInstalled().then((v) => {
+          camoufoxAvailable = v;
+        }),
+      ])
     : Promise.resolve();
+
+  // Create a singleton proxy pool (domain-affinity strategy)
+  const proxyPool = createProxyPool({ strategy: "domain-affinity" });
 
   return {
     label: "Web Fetch",
@@ -1076,7 +1144,7 @@ export function createWebFetchTool(options?: {
       "Fetch and extract readable content from a URL (HTML → markdown/text). Use for lightweight page access without browser automation. Automatically bypasses anti-bot protections when detected.",
     parameters: WebFetchSchema,
     execute: async (_toolCallId, args) => {
-      await scraplingCheck;
+      await availabilityChecks;
       const params = args as Record<string, unknown>;
       const url = readStringParam(params, "url", { required: true });
       const extractMode = readStringParam(params, "extractMode") === "text" ? "text" : "markdown";
@@ -1107,6 +1175,9 @@ export function createWebFetchTool(options?: {
         autoEscalation,
         maxBlockRetries,
         scraplingAvailable,
+        tlsEngineAvailable,
+        camoufoxAvailable,
+        proxyPool,
       });
       return jsonResult(result);
     },

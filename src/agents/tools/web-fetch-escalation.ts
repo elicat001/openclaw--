@@ -14,6 +14,7 @@ import {
   type BlockDetectionResult,
   type EscalationSuggestion,
 } from "./web-fetch-block-detect.js";
+import { fetchWithCamoufox } from "./web-fetch-camoufox-engine.js";
 import type { CookieJar } from "./web-fetch-cookie-jar.js";
 import { matchDomainProfile } from "./web-fetch-domain-profiles.js";
 import {
@@ -22,10 +23,13 @@ import {
   buildIdentityHeaders,
   pickUserAgent,
 } from "./web-fetch-headers.js";
+import { fetchWithTlsImpersonation, pickImpersonateProfile } from "./web-fetch-tls-engine.js";
 
 export type EscalationStrategy =
   | "direct"
   | "retry_with_new_headers"
+  | "tls_impersonate"
+  | "camoufox_stealth"
   | "scrapling_fast"
   | "scrapling_stealth"
   | "firecrawl";
@@ -40,10 +44,35 @@ export type EscalationConfig = {
   maxBlockRetries: number;
   scraplingAvailable: boolean;
   firecrawlAvailable: boolean;
+  tlsEngineAvailable?: boolean;
+  camoufoxAvailable?: boolean;
+  proxyPool?: import("./web-fetch-proxy-pool.js").ProxyPool;
 };
 
-const DEFAULT_RETRY_DELAY_MS = 1_500;
+const BASE_RETRY_DELAY_MS = 1_500;
 const MAX_RETRY_AFTER_MS = 30_000;
+const MAX_BACKOFF_MS = 30_000;
+
+/** Exponential backoff with jitter: min(base * 2^attempt + random(0, 1000), 30000) */
+function calculateBackoff(attempt: number): number {
+  const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt) + Math.random() * 1000;
+  return Math.min(delay, MAX_BACKOFF_MS);
+}
+
+// ── Circuit Breaker ──────────────────────────────────────────────
+// Remember the last successful strategy per domain so we skip failed layers.
+
+const circuitBreakerMap = new Map<string, EscalationStrategy>();
+
+/** Record a successful strategy for a domain. */
+function recordSuccessfulStrategy(domain: string, strategy: EscalationStrategy): void {
+  circuitBreakerMap.set(domain, strategy);
+}
+
+/** Get the last known successful strategy for a domain, if any. */
+function getLastSuccessfulStrategy(domain: string): EscalationStrategy | undefined {
+  return circuitBreakerMap.get(domain);
+}
 
 /**
  * Call scrapling directly via the Python subprocess.
@@ -106,16 +135,16 @@ function nextStrategy(
   // Follow the suggestion if we haven't tried it and it's available
   if (suggestion && !attempted.has(mapSuggestionToStrategy(suggestion))) {
     const strategy = mapSuggestionToStrategy(suggestion);
-    const isScrapling = strategy === "scrapling_fast" || strategy === "scrapling_stealth";
-    if (!isScrapling || config.scraplingAvailable) {
+    if (isStrategyAvailable(strategy, config)) {
       return strategy;
     }
-    // Suggestion unavailable, fall through to chain
   }
 
-  // Otherwise escalate through the chain
+  // New escalation chain: tls_impersonate → camoufox → scrapling_stealth → firecrawl
   const chain: EscalationStrategy[] = [
     "retry_with_new_headers",
+    "tls_impersonate",
+    "camoufox_stealth",
     "scrapling_fast",
     "scrapling_stealth",
     "firecrawl",
@@ -125,12 +154,7 @@ function nextStrategy(
     if (attempted.has(strategy)) {
       continue;
     }
-    if (strategy === "scrapling_fast" || strategy === "scrapling_stealth") {
-      if (!config.scraplingAvailable) {
-        continue;
-      }
-    }
-    if (strategy === "firecrawl" && !config.firecrawlAvailable) {
+    if (!isStrategyAvailable(strategy, config)) {
       continue;
     }
     return strategy;
@@ -139,8 +163,24 @@ function nextStrategy(
   return null;
 }
 
+function isStrategyAvailable(strategy: EscalationStrategy, config: EscalationConfig): boolean {
+  switch (strategy) {
+    case "tls_impersonate":
+      return config.tlsEngineAvailable === true;
+    case "camoufox_stealth":
+      return config.camoufoxAvailable === true;
+    case "scrapling_fast":
+    case "scrapling_stealth":
+      return config.scraplingAvailable;
+    case "firecrawl":
+      return config.firecrawlAvailable;
+    default:
+      return true;
+  }
+}
+
 function mapSuggestionToStrategy(suggestion: EscalationSuggestion): EscalationStrategy {
-  return suggestion;
+  return suggestion as EscalationStrategy;
 }
 
 export type DirectFetchFn = (params: { headers: Record<string, string> }) => Promise<{
@@ -241,6 +281,19 @@ export async function runWithEscalation(params: {
       escalationPath: EscalationStep[];
     }
   | {
+      type: "tls_impersonate";
+      status: number;
+      body: string;
+      headers: Record<string, string>;
+      escalationPath: EscalationStep[];
+    }
+  | {
+      type: "camoufox";
+      text: string;
+      status: number;
+      escalationPath: EscalationStep[];
+    }
+  | {
       type: "firecrawl";
       payload: Record<string, unknown>;
       escalationPath: EscalationStep[];
@@ -259,9 +312,62 @@ export async function runWithEscalation(params: {
   }
 
   const domainProfile = hostname ? matchDomainProfile(hostname) : null;
-  const startStrategy = domainProfile?.defaultMode ?? "direct";
 
-  // If domain requires stealth from the start, skip direct and go straight to scrapling
+  // Circuit breaker: use last successful strategy if known, else domain profile default
+  const circuitBreakerStrategy = hostname ? getLastSuccessfulStrategy(hostname) : undefined;
+  const startStrategy = circuitBreakerStrategy ?? domainProfile?.defaultMode ?? "direct";
+
+  // If domain should start with tls_impersonate (fast path for known anti-bot domains)
+  if (startStrategy === "tls_impersonate" && config.tlsEngineAvailable) {
+    attempted.add("direct");
+    attempted.add("retry_with_new_headers");
+    attempted.add("tls_impersonate");
+
+    logDebug(
+      `[web-fetch-escalation] domain profile match for ${hostname}, starting with tls_impersonate`,
+    );
+
+    const cookieHeader = sessionState?.cookieJar.getCookieHeader(url) ?? "";
+    const proxy = config.proxyPool?.getProxy(hostname) ?? undefined;
+    const impersonateProfile = sessionState?.identity
+      ? pickImpersonateProfile(sessionState.identity)
+      : undefined;
+
+    const result = await fetchWithTlsImpersonation({
+      url,
+      cookies: cookieHeader || undefined,
+      proxy: proxy?.url,
+      impersonate: impersonateProfile,
+    });
+
+    if (result && result.body.length > 100 && result.status < 400) {
+      importSetCookieHeaders(result.headers, url, sessionState);
+      if (proxy && config.proxyPool) {
+        config.proxyPool.markSuccess(proxy);
+      }
+      if (hostname) {
+        recordSuccessfulStrategy(hostname, "tls_impersonate");
+      }
+      escalationPath.push({ strategy: "tls_impersonate", outcome: "success" });
+      return {
+        type: "tls_impersonate",
+        status: result.status,
+        body: result.body,
+        headers: result.headers,
+        escalationPath,
+      };
+    }
+
+    if (proxy && config.proxyPool) {
+      config.proxyPool.markFailed(proxy);
+    }
+    escalationPath.push({ strategy: "tls_impersonate", outcome: "error" });
+    logDebug(`[web-fetch-escalation] tls_impersonate failed for ${hostname}, escalating...`);
+
+    // Continue to normal escalation (camoufox → scrapling → firecrawl)
+  }
+
+  // If domain should start with scrapling_stealth (legacy or circuit breaker)
   if (
     startStrategy === "scrapling_stealth" &&
     config.scraplingAvailable &&
@@ -272,9 +378,7 @@ export async function runWithEscalation(params: {
     attempted.add("scrapling_fast");
     attempted.add("scrapling_stealth");
 
-    logDebug(
-      `[web-fetch-escalation] domain profile match for ${hostname}, starting with scrapling_stealth`,
-    );
+    logDebug(`[web-fetch-escalation] starting with scrapling_stealth for ${hostname}`);
 
     const scraplingCookies = sessionState?.cookieJar.exportForScrapling(url);
     const viewport = sessionState?.identity.viewport;
@@ -289,20 +393,9 @@ export async function runWithEscalation(params: {
     });
 
     if (result && result.text.length > 100) {
-      // Store returned cookies in session
-      if (result.cookies && sessionState?.cookieJar) {
-        sessionState.cookieJar.importCookies(
-          result.cookies.map((c) => ({
-            name: c.name,
-            value: c.value,
-            domain: c.domain,
-            path: c.path,
-            expires: null,
-            httpOnly: false,
-            secure: false,
-            sameSite: "lax" as const,
-          })),
-        );
+      importCookiesFromResult(result.cookies, sessionState);
+      if (hostname) {
+        recordSuccessfulStrategy(hostname, "scrapling_stealth");
       }
       escalationPath.push({ strategy: "scrapling_stealth", outcome: "success" });
       return {
@@ -317,7 +410,6 @@ export async function runWithEscalation(params: {
     escalationPath.push({ strategy: "scrapling_stealth", outcome: "error" });
     logDebug(`[web-fetch-escalation] scrapling_stealth failed for ${hostname}, trying firecrawl`);
 
-    // Fall through to firecrawl
     const firecrawlResult = await tryFirecrawl(
       firecrawlFallback,
       escalationPath,
@@ -327,6 +419,28 @@ export async function runWithEscalation(params: {
     if (firecrawlResult) {
       return firecrawlResult;
     }
+  }
+
+  // If circuit breaker points to camoufox
+  if (
+    startStrategy === "camoufox_stealth" &&
+    config.camoufoxAvailable &&
+    !attempted.has("camoufox_stealth")
+  ) {
+    attempted.add("direct");
+    attempted.add("retry_with_new_headers");
+    attempted.add("tls_impersonate");
+    attempted.add("camoufox_stealth");
+
+    const camoufoxResult = await tryCamoufox(url, sessionState, config, hostname);
+    if (camoufoxResult) {
+      if (hostname) {
+        recordSuccessfulStrategy(hostname, "camoufox_stealth");
+      }
+      escalationPath.push({ strategy: "camoufox_stealth", outcome: "success" });
+      return { ...camoufoxResult, escalationPath };
+    }
+    escalationPath.push({ strategy: "camoufox_stealth", outcome: "error" });
   }
 
   // Step 1: Direct fetch with initial headers
@@ -407,11 +521,11 @@ export async function runWithEscalation(params: {
     retryCount++;
 
     if (strategy === "retry_with_new_headers") {
-      // Respect Retry-After header
+      // Exponential backoff with Retry-After respect
       const retryAfterMs = extractRetryAfterMs(directResult.headers);
       const delayMs = retryAfterMs
         ? Math.min(retryAfterMs, MAX_RETRY_AFTER_MS)
-        : DEFAULT_RETRY_DELAY_MS;
+        : calculateBackoff(retryCount);
       await sleep(delayMs);
 
       // Use session identity if available, otherwise pick new UA
@@ -455,6 +569,59 @@ export async function runWithEscalation(params: {
         escalationPath.push({ strategy: "retry_with_new_headers", outcome: "error" });
       }
       logDebug(`[web-fetch-escalation] retry_with_new_headers failed for ${extractHost(url)}`);
+    } else if (strategy === "tls_impersonate") {
+      logDebug(`[web-fetch-escalation] trying tls_impersonate for ${extractHost(url)}`);
+      await sleep(calculateBackoff(retryCount));
+
+      const cookieHeader = sessionState?.cookieJar.getCookieHeader(url) ?? "";
+      const proxy = config.proxyPool?.getProxy(hostname) ?? undefined;
+      const impersonateProfile = sessionState?.identity
+        ? pickImpersonateProfile(sessionState.identity)
+        : undefined;
+
+      const tlsResult = await fetchWithTlsImpersonation({
+        url,
+        cookies: cookieHeader || undefined,
+        proxy: proxy?.url,
+        impersonate: impersonateProfile,
+      });
+
+      if (tlsResult && tlsResult.body.length > 100 && tlsResult.status < 400) {
+        importSetCookieHeaders(tlsResult.headers, url, sessionState);
+        if (proxy && config.proxyPool) {
+          config.proxyPool.markSuccess(proxy);
+        }
+        if (hostname) {
+          recordSuccessfulStrategy(hostname, "tls_impersonate");
+        }
+        escalationPath.push({ strategy: "tls_impersonate", outcome: "success" });
+        return {
+          type: "tls_impersonate",
+          status: tlsResult.status,
+          body: tlsResult.body,
+          headers: tlsResult.headers,
+          escalationPath,
+        };
+      }
+      if (proxy && config.proxyPool) {
+        config.proxyPool.markFailed(proxy);
+      }
+      escalationPath.push({ strategy: "tls_impersonate", outcome: "error" });
+      logDebug(`[web-fetch-escalation] tls_impersonate failed for ${extractHost(url)}`);
+    } else if (strategy === "camoufox_stealth") {
+      logDebug(`[web-fetch-escalation] trying camoufox_stealth for ${extractHost(url)}`);
+      await sleep(calculateBackoff(retryCount));
+
+      const camoufoxResult = await tryCamoufox(url, sessionState, config, hostname);
+      if (camoufoxResult) {
+        if (hostname) {
+          recordSuccessfulStrategy(hostname, "camoufox_stealth");
+        }
+        escalationPath.push({ strategy: "camoufox_stealth", outcome: "success" });
+        return { ...camoufoxResult, escalationPath };
+      }
+      escalationPath.push({ strategy: "camoufox_stealth", outcome: "error" });
+      logDebug(`[web-fetch-escalation] camoufox_stealth failed for ${extractHost(url)}`);
     } else if (strategy === "scrapling_fast" || strategy === "scrapling_stealth") {
       const mode = strategy === "scrapling_fast" ? "fast" : "stealth";
       logDebug(`[web-fetch-escalation] trying scrapling ${mode} for ${extractHost(url)}`);
@@ -472,20 +639,9 @@ export async function runWithEscalation(params: {
       });
 
       if (result && result.text.length > 100) {
-        // Store returned cookies in session
-        if (result.cookies && sessionState?.cookieJar) {
-          sessionState.cookieJar.importCookies(
-            result.cookies.map((c) => ({
-              name: c.name,
-              value: c.value,
-              domain: c.domain,
-              path: c.path,
-              expires: null,
-              httpOnly: false,
-              secure: false,
-              sameSite: "lax" as const,
-            })),
-          );
+        importCookiesFromResult(result.cookies, sessionState);
+        if (hostname) {
+          recordSuccessfulStrategy(hostname, strategy);
         }
         escalationPath.push({ strategy, outcome: "success" });
         return {
@@ -541,6 +697,81 @@ async function tryFirecrawl(
     // Firecrawl failed
   }
   escalationPath.push({ strategy: "firecrawl", outcome: "error" });
+  return null;
+}
+
+/** Import Set-Cookie headers from a TLS engine response into the session cookie jar. */
+function importSetCookieHeaders(
+  headers: Record<string, string>,
+  url: string,
+  sessionState?: SessionAntiDetectionState,
+): void {
+  if (!sessionState?.cookieJar) {
+    return;
+  }
+  // Look for Set-Cookie header (case-insensitive)
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === "set-cookie") {
+      // Multiple cookies may be separated by newlines in the value
+      for (const cookie of value.split("\n")) {
+        sessionState.cookieJar.setCookie(cookie.trim(), url);
+      }
+    }
+  }
+}
+
+/** Import cookies array from scrapling/camoufox results into the session. */
+function importCookiesFromResult(
+  cookies: Array<{ name: string; value: string; domain: string; path: string }> | undefined,
+  sessionState?: SessionAntiDetectionState,
+): void {
+  if (!cookies || !sessionState?.cookieJar) {
+    return;
+  }
+  sessionState.cookieJar.importCookies(
+    cookies.map((c) => ({
+      name: c.name,
+      value: c.value,
+      domain: c.domain,
+      path: c.path,
+      expires: null,
+      httpOnly: false,
+      secure: false,
+      sameSite: "lax" as const,
+    })),
+  );
+}
+
+/** Try Camoufox anti-detect browser for a URL. */
+async function tryCamoufox(
+  url: string,
+  sessionState: SessionAntiDetectionState | undefined,
+  config: EscalationConfig,
+  hostname: string,
+): Promise<{ type: "camoufox"; text: string; status: number } | null> {
+  const proxy = config.proxyPool?.getProxy(hostname) ?? undefined;
+  const cookies = sessionState?.cookieJar.exportCookies() ?? [];
+  const viewport = sessionState?.identity.viewport;
+
+  const result = await fetchWithCamoufox({
+    url,
+    cookies,
+    viewport,
+    proxy: proxy?.url,
+    humanize: true,
+  });
+
+  if (result && result.text.length > 100) {
+    importCookiesFromResult(result.cookies, sessionState);
+    if (proxy && config.proxyPool) {
+      config.proxyPool.markSuccess(proxy);
+    }
+    return { type: "camoufox", text: result.text, status: result.status };
+  }
+
+  if (proxy && config.proxyPool) {
+    config.proxyPool.markFailed(proxy);
+  }
   return null;
 }
 

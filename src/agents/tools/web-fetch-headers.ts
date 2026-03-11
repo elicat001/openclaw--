@@ -3,13 +3,15 @@
  * browser header generation for anti-bot evasion in web fetching.
  */
 
+import { createBrowserFingerprint } from "./web-fetch-fingerprint-db.js";
+
 // ── Types ────────────────────────────────────────────────────────
 
 /** A frozen browser identity for an entire crawl session. All headers are derived consistently. */
 export type BrowserIdentity = {
   userAgent: string;
-  platform: "macOS" | "Windows";
-  browserFamily: "chrome" | "firefox" | "safari";
+  platform: "macOS" | "Windows" | "Linux" | "Android" | "iOS";
+  browserFamily: "chrome" | "firefox" | "safari" | "edge";
   browserVersion: string;
   secChUA: string | null;
   acceptLanguage: string;
@@ -18,7 +20,7 @@ export type BrowserIdentity = {
 
 // ── Constants ────────────────────────────────────────────────────
 
-const VIEWPORT_POOL = [
+const _VIEWPORT_POOL = [
   { width: 1920, height: 1080 },
   { width: 1440, height: 900 },
   { width: 1536, height: 864 },
@@ -167,41 +169,10 @@ export function buildBrowserHeaders(params: {
 
 /**
  * Create a frozen browser identity for an entire crawl session.
- * All derived values (Sec-CH-UA, Accept-Language, viewport) are
- * deterministically tied to the chosen UA so headers stay consistent.
+ * Delegates to the weighted fingerprint database for wider UA coverage.
  */
 export function createBrowserIdentity(): BrowserIdentity {
-  const userAgent = pickRandom(USER_AGENT_POOL);
-  const platform: "macOS" | "Windows" = userAgent.includes("Windows") ? "Windows" : "macOS";
-
-  let browserFamily: "chrome" | "firefox" | "safari";
-  let browserVersion: string;
-  let secChUA: string | null = null;
-
-  const chromeVer = parseChromeVersionFromUA(userAgent);
-  if (chromeVer) {
-    browserFamily = "chrome";
-    browserVersion = chromeVer;
-    secChUA = buildSecChUA(chromeVer);
-  } else if (isFirefoxUA(userAgent)) {
-    browserFamily = "firefox";
-    const m = FIREFOX_VERSION_RE.exec(userAgent);
-    browserVersion = m?.[1] ?? "132";
-  } else {
-    browserFamily = "safari";
-    const m = /Version\/(\d+\.\d+)/.exec(userAgent);
-    browserVersion = m?.[1] ?? "17.6";
-  }
-
-  return {
-    userAgent,
-    platform,
-    browserFamily,
-    browserVersion,
-    secChUA,
-    acceptLanguage: pickRandom(ACCEPT_LANGUAGE_POOL),
-    viewport: { ...pickRandom(VIEWPORT_POOL) },
-  };
+  return createBrowserFingerprint();
 }
 
 /**
@@ -228,9 +199,11 @@ export function buildIdentityHeaders(params: {
       "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
   }
 
-  if (identity.browserFamily === "chrome") {
+  const isMobile = identity.platform === "Android" || identity.platform === "iOS";
+
+  if (identity.browserFamily === "chrome" || identity.browserFamily === "edge") {
     headers["Sec-CH-UA"] = identity.secChUA!;
-    headers["Sec-CH-UA-Mobile"] = "?0";
+    headers["Sec-CH-UA-Mobile"] = isMobile ? "?1" : "?0";
     headers["Sec-CH-UA-Platform"] = `"${identity.platform}"`;
     headers["Sec-Fetch-Dest"] = "document";
     headers["Sec-Fetch-Mode"] = "navigate";
