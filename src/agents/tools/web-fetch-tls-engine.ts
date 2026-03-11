@@ -4,6 +4,7 @@
  * and HTTP/2 SETTINGS frames via curl_cffi's impersonation engine.
  */
 
+import { logDebug } from "../../logger.js";
 import { runPython } from "./scrapling-tool.js";
 import type { BrowserIdentity } from "./web-fetch-headers.js";
 
@@ -34,22 +35,31 @@ export type TlsImpersonateParams = {
 
 // ── Impersonation profiles ───────────────────────────────────────
 
+/**
+ * Impersonation profiles supported by curl_cffi 0.14+.
+ * Names must exactly match BrowserType enum values.
+ * Run `python3 -c "from curl_cffi.requests import BrowserType; print([x for x in dir(BrowserType) if not x.startswith('_')])"` to list.
+ */
 const IMPERSONATE_PROFILES = [
+  "chrome142",
+  "chrome136",
+  "chrome133a",
   "chrome131",
-  "chrome130",
-  "chrome129",
-  "chrome128",
-  "chrome127",
-  "chrome126",
-  "chrome125",
   "chrome124",
-  "firefox132",
-  "firefox131",
-  "firefox130",
-  "safari17.6",
-  "safari17.5",
-  "edge131",
-  "edge130",
+  "chrome123",
+  "chrome120",
+  "chrome119",
+  "chrome116",
+  "chrome110",
+  "firefox144",
+  "firefox135",
+  "firefox133",
+  "safari184",
+  "safari180",
+  "safari17_0",
+  "safari15_5",
+  "edge101",
+  "edge99",
 ] as const;
 
 /**
@@ -58,27 +68,24 @@ const IMPERSONATE_PROFILES = [
  */
 export function pickImpersonateProfile(identity?: BrowserIdentity): string {
   if (identity) {
-    const family = identity.browserFamily; // "chrome" | "firefox" | "safari"
-    const version = identity.browserVersion; // e.g. "131.0.0.0"
+    const family = identity.browserFamily; // "chrome" | "firefox" | "safari" | "edge"
+    const version = identity.browserVersion; // e.g. "131" or "17.6"
     const majorVersion = version.split(".")[0];
 
-    // For safari, profiles use dotted minor versions like "safari17.6"
-    const prefix = family === "safari" ? `safari${majorVersion}.` : family;
-
-    // Try exact major-version match first
+    // Try exact match: chrome131, firefox133, safari17_0, edge101
     const exactMatch = IMPERSONATE_PROFILES.find((p) => {
       if (family === "safari") {
+        // Safari profiles use major version prefix: safari17_0, safari180, safari184
         return p.startsWith(`safari${majorVersion}`);
       }
-      return p === `${prefix}${majorVersion}`;
+      return p === `${family}${majorVersion}`;
     });
     if (exactMatch) {
       return exactMatch;
     }
 
     // Fall back to any profile from the same browser family
-    const familyPrefix = family === "safari" ? "safari" : family;
-    const familyMatches = IMPERSONATE_PROFILES.filter((p) => p.startsWith(familyPrefix));
+    const familyMatches = IMPERSONATE_PROFILES.filter((p) => p.startsWith(family));
     if (familyMatches.length > 0) {
       return familyMatches[Math.floor(Math.random() * familyMatches.length)];
     }
@@ -164,9 +171,13 @@ export async function fetchWithTlsImpersonation(
   params: TlsImpersonateParams,
 ): Promise<TlsEngineResult | null> {
   try {
-    const { stdout } = await runPython(TLS_ENGINE_SCRIPT, JSON.stringify(params));
+    const { stdout, stderr } = await runPython(TLS_ENGINE_SCRIPT, JSON.stringify(params));
+    if (stderr) {
+      logDebug(`[tls-engine] stderr: ${stderr.slice(0, 500)}`);
+    }
     return JSON.parse(stdout.trim()) as TlsEngineResult;
-  } catch {
+  } catch (err) {
+    logDebug(`[tls-engine] fetch failed for ${params.url}: ${String(err)}`);
     return null;
   }
 }

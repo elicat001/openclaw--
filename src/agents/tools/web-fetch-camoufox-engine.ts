@@ -6,6 +6,7 @@
 
 import { execFile } from "node:child_process";
 import { extendedPythonPath } from "../../agent-reach/extended-path.js";
+import { logDebug } from "../../logger.js";
 import { runPython } from "./scrapling-tool.js";
 import type { CookieEntry } from "./web-fetch-cookie-jar.js";
 
@@ -171,13 +172,17 @@ export async function fetchWithCamoufox(params: CamoufoxParams): Promise<Camoufo
   });
 
   try {
-    const { stdout } = await runPythonWithTimeout(
+    const { stdout, stderr } = await runPythonWithTimeout(
       CAMOUFOX_SCRIPT,
       stdinPayload,
       CAMOUFOX_TIMEOUT_MS,
     );
+    if (stderr) {
+      logDebug(`[camoufox] stderr: ${stderr.slice(0, 500)}`);
+    }
     return JSON.parse(stdout.trim()) as CamoufoxResult;
-  } catch {
+  } catch (err) {
+    logDebug(`[camoufox] fetch failed for ${params.url}: ${String(err)}`);
     return null;
   }
 }
@@ -193,7 +198,9 @@ export async function isCamoufoxInstalled(): Promise<boolean> {
     return camoufoxInstalledCache;
   }
   try {
-    await runPython('import camoufox; print("ok")');
+    // Check both that the Python package is importable AND the browser binary exists.
+    // camoufox_path() throws if the binary hasn't been downloaded yet.
+    await runPython('from camoufox.pkgman import camoufox_path; camoufox_path(); print("ok")');
     camoufoxInstalledCache = true;
   } catch {
     camoufoxInstalledCache = false;
