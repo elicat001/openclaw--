@@ -26,6 +26,12 @@
 import { logDebug } from "../../logger.js";
 import { type CrawlBehaviorProfile, resolveCrawlProfile } from "./crawl-behavior-profile.js";
 import { createCrawlPacer, type CrawlPacer } from "./crawl-pacing.js";
+import { type CookieJar, createCookieJar } from "./web-fetch-cookie-jar.js";
+import {
+  type BrowserIdentity,
+  buildIdentityHeaders,
+  createBrowserIdentity,
+} from "./web-fetch-headers.js";
 
 export type CrawlSessionConfig = {
   /** The search keyword for this session. */
@@ -57,6 +63,14 @@ export type CrawlSession = {
   startedAt: number;
   /** Whether this session is still active. */
   active: boolean;
+  /** Per-session cookie jar for cookie persistence. */
+  cookieJar: CookieJar;
+  /** Locked browser identity for consistent fingerprinting. */
+  identity: BrowserIdentity;
+  /** Ordered list of URLs visited (for Referer chain). */
+  navigationHistory: string[];
+  /** Whether the homepage warmup has been performed. */
+  warmedUp: boolean;
 
   /**
    * 规则 1: Verify the action matches this session's keyword.
@@ -75,6 +89,15 @@ export type CrawlSession = {
 
   /** Get session summary for logging. */
   summary(): CrawlSessionSummary;
+
+  /** Record a URL in the navigation history (for Referer chain). */
+  recordNavigation(url: string): void;
+
+  /** Get the last visited URL (for Referer header). */
+  getReferer(): string | undefined;
+
+  /** Build headers using the session identity + cookies + referer for a URL. */
+  getHeaders(url: string, opts?: { acceptMarkdown?: boolean }): Record<string, string>;
 };
 
 export type CrawlSessionSummary = {
@@ -134,6 +157,9 @@ export function acquireCrawlSession(config: CrawlSessionConfig): CrawlSession | 
 
   const pacer = createCrawlPacer(resolvedProfile);
 
+  const identity = createBrowserIdentity();
+  const cookieJar = createCookieJar();
+
   const session: CrawlSession = {
     id,
     keyword: config.keyword,
@@ -143,6 +169,10 @@ export function acquireCrawlSession(config: CrawlSessionConfig): CrawlSession | 
     pacer,
     startedAt: Date.now(),
     active: true,
+    cookieJar,
+    identity,
+    navigationHistory: [],
+    warmedUp: false,
 
     validateKeyword(keyword: string): boolean {
       if (!resolvedProfile.singleKeywordPerSession) {
@@ -170,6 +200,34 @@ export function acquireCrawlSession(config: CrawlSessionConfig): CrawlSession | 
         return false;
       }
       return true;
+    },
+
+    recordNavigation(url: string): void {
+      this.navigationHistory.push(url);
+      // Keep only last 20 entries
+      if (this.navigationHistory.length > 20) {
+        this.navigationHistory.shift();
+      }
+    },
+
+    getReferer(): string | undefined {
+      return this.navigationHistory.length > 0
+        ? this.navigationHistory[this.navigationHistory.length - 1]
+        : undefined;
+    },
+
+    getHeaders(url: string, opts?: { acceptMarkdown?: boolean }): Record<string, string> {
+      const headers = buildIdentityHeaders({
+        identity,
+        referer: this.getReferer(),
+        targetUrl: url,
+        acceptMarkdown: opts?.acceptMarkdown,
+      });
+      const cookieHeader = cookieJar.getCookieHeader(url);
+      if (cookieHeader) {
+        headers["Cookie"] = cookieHeader;
+      }
+      return headers;
     },
 
     release(): void {

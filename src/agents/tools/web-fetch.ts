@@ -11,7 +11,12 @@ import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
 import { getActiveCrawlSession } from "./crawl-session.js";
 import { isScraplingInstalled } from "./scrapling-tool.js";
-import { runWithEscalation, type EscalationStep } from "./web-fetch-escalation.js";
+import { matchDomainProfile } from "./web-fetch-domain-profiles.js";
+import {
+  performSessionWarmup,
+  runWithEscalation,
+  type EscalationStep,
+} from "./web-fetch-escalation.js";
 import { buildBrowserHeaders, pickUserAgent } from "./web-fetch-headers.js";
 import { createDomainRateLimiter, extractDomain } from "./web-fetch-rate-limit.js";
 import {
@@ -543,6 +548,29 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
   const crawlSession = getActiveCrawlSession();
   if (crawlSession && !crawlSession.pacer.isAborted()) {
     await crawlSession.pacer.beforePageTurn();
+
+    // Session warmup: visit homepage before first real fetch on anti-bot domains
+    if (!crawlSession.warmedUp) {
+      try {
+        const hostname = new URL(params.url).hostname;
+        const domainProfile = matchDomainProfile(hostname);
+        if (domainProfile?.warmupPath) {
+          const baseUrl = `${new URL(params.url).protocol}//${hostname}`;
+          const warmupOk = await performSessionWarmup({
+            baseUrl,
+            warmupPath: domainProfile.warmupPath,
+            cookieJar: crawlSession.cookieJar,
+            identity: crawlSession.identity,
+          });
+          if (warmupOk) {
+            crawlSession.recordNavigation(`${baseUrl}${domainProfile.warmupPath}`);
+          }
+        }
+      } catch {
+        // Warmup is best-effort
+      }
+      crawlSession.warmedUp = true;
+    }
   }
 
   const start = Date.now();
@@ -555,6 +583,11 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
   } else {
     // Legacy path: no escalation
     result = await runWebFetchDirect(params, cacheKey, start);
+  }
+
+  // Record navigation and capture cookies from response
+  if (crawlSession && !crawlSession.pacer.isAborted()) {
+    crawlSession.recordNavigation(params.url);
   }
 
   // Crawl session pacing: post-fetch processing
@@ -675,6 +708,16 @@ async function runWebFetchWithEscalation(
 ): Promise<Record<string, unknown>> {
   const firecrawlAvailable = params.firecrawlEnabled && Boolean(params.firecrawlApiKey);
 
+  // Build session state for anti-detection if a crawl session is active
+  const activeCrawlSession = getActiveCrawlSession();
+  const sessionState = activeCrawlSession
+    ? {
+        cookieJar: activeCrawlSession.cookieJar,
+        identity: activeCrawlSession.identity,
+        navigationHistory: activeCrawlSession.navigationHistory,
+      }
+    : undefined;
+
   const escalationResult = await runWithEscalation({
     url: params.url,
     maxChars: params.maxChars,
@@ -683,9 +726,14 @@ async function runWebFetchWithEscalation(
       scraplingAvailable: params.scraplingAvailable,
       firecrawlAvailable,
     },
+    sessionState,
     directFetch: async ({ headers: escalationHeaders }) => {
+      // Use session identity headers if available, otherwise standard random UA
+      const baseHeaders = activeCrawlSession
+        ? activeCrawlSession.getHeaders(params.url, { acceptMarkdown: true })
+        : buildBrowserHeaders({ userAgent: params.userAgent, acceptMarkdown: true });
       const mergedHeaders = {
-        ...buildBrowserHeaders({ userAgent: params.userAgent, acceptMarkdown: true }),
+        ...baseHeaders,
         ...escalationHeaders,
       };
       const result = await fetchWithWebToolsNetworkGuard({

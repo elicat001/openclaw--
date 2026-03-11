@@ -59,18 +59,41 @@ selector = params.get("selector")
 max_chars = params.get("maxChars", 50000)
 solve_cf = params.get("solveCloudflare", False)
 proxy = params.get("proxy")
+input_cookies = params.get("cookies", [])
+viewport = params.get("viewport")
 
 proxy_kw = {"proxy": proxy} if proxy else {}
+out_cookies = []
 
 if mode == "stealth":
     from scrapling import StealthyFetcher
     fetch_kw = {"headless": True, "network_idle": True, **proxy_kw}
     if solve_cf:
         fetch_kw["solve_cloudflare"] = True
-    page = StealthyFetcher().fetch(url, **fetch_kw)
+    if viewport:
+        fetch_kw["viewport"] = {"width": viewport.get("width", 1920), "height": viewport.get("height", 1080)}
+    fetcher = StealthyFetcher()
+    page = fetcher.fetch(url, **fetch_kw)
+    # Try to extract cookies from the browser context
+    try:
+        if hasattr(page, "page") and page.page:
+            ctx = page.page.context
+            browser_cookies = ctx.cookies()
+            for c in browser_cookies:
+                out_cookies.append({
+                    "name": c.get("name", ""),
+                    "value": c.get("value", ""),
+                    "domain": c.get("domain", ""),
+                    "path": c.get("path", "/"),
+                })
+    except Exception:
+        pass
 elif mode == "dynamic":
     from scrapling import PlayWrightFetcher
-    page = PlayWrightFetcher().fetch(url, network_idle=True, disable_resources=True, **proxy_kw)
+    fetch_kw = {"network_idle": True, "disable_resources": True, **proxy_kw}
+    if viewport:
+        fetch_kw["viewport"] = {"width": viewport.get("width", 1920), "height": viewport.get("height", 1080)}
+    page = PlayWrightFetcher().fetch(url, **fetch_kw)
 else:
     from scrapling import Fetcher
     page = Fetcher().get(url, **proxy_kw)
@@ -82,6 +105,9 @@ if selector:
 else:
     text = page.get_all_text()
     result = {"status": page.status, "length": len(text), "text": text[:max_chars]}
+
+if out_cookies:
+    result["cookies"] = out_cookies
 
 print(json.dumps(result, ensure_ascii=False))
 `.trim();

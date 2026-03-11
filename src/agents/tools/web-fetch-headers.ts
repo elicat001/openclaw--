@@ -1,7 +1,31 @@
 /**
- * User-Agent rotation pool and realistic browser header generation
- * for anti-bot evasion in web fetching.
+ * User-Agent rotation pool, browser identity management, and realistic
+ * browser header generation for anti-bot evasion in web fetching.
  */
+
+// ── Types ────────────────────────────────────────────────────────
+
+/** A frozen browser identity for an entire crawl session. All headers are derived consistently. */
+export type BrowserIdentity = {
+  userAgent: string;
+  platform: "macOS" | "Windows";
+  browserFamily: "chrome" | "firefox" | "safari";
+  browserVersion: string;
+  secChUA: string | null;
+  acceptLanguage: string;
+  viewport: { width: number; height: number };
+};
+
+// ── Constants ────────────────────────────────────────────────────
+
+const VIEWPORT_POOL = [
+  { width: 1920, height: 1080 },
+  { width: 1440, height: 900 },
+  { width: 1536, height: 864 },
+  { width: 2560, height: 1440 },
+  { width: 1366, height: 768 },
+  { width: 1680, height: 1050 },
+] as const;
 
 /** Modern, realistic User-Agent strings covering Chrome, Firefox, and Safari on macOS/Windows. */
 const USER_AGENT_POOL = [
@@ -131,10 +155,117 @@ export function buildBrowserHeaders(params: {
     headers["Upgrade-Insecure-Requests"] = "1";
   }
 
-  // Randomly include DNT header (~30% of requests)
+  // Randomly include DNT header (~30% of requests) unless identity locks it
   if (Math.random() < 0.3) {
     headers["DNT"] = "1";
   }
 
   return headers;
+}
+
+// ── Session-level identity ───────────────────────────────────────
+
+/**
+ * Create a frozen browser identity for an entire crawl session.
+ * All derived values (Sec-CH-UA, Accept-Language, viewport) are
+ * deterministically tied to the chosen UA so headers stay consistent.
+ */
+export function createBrowserIdentity(): BrowserIdentity {
+  const userAgent = pickRandom(USER_AGENT_POOL);
+  const platform: "macOS" | "Windows" = userAgent.includes("Windows") ? "Windows" : "macOS";
+
+  let browserFamily: "chrome" | "firefox" | "safari";
+  let browserVersion: string;
+  let secChUA: string | null = null;
+
+  const chromeVer = parseChromeVersionFromUA(userAgent);
+  if (chromeVer) {
+    browserFamily = "chrome";
+    browserVersion = chromeVer;
+    secChUA = buildSecChUA(chromeVer);
+  } else if (isFirefoxUA(userAgent)) {
+    browserFamily = "firefox";
+    const m = FIREFOX_VERSION_RE.exec(userAgent);
+    browserVersion = m?.[1] ?? "132";
+  } else {
+    browserFamily = "safari";
+    const m = /Version\/(\d+\.\d+)/.exec(userAgent);
+    browserVersion = m?.[1] ?? "17.6";
+  }
+
+  return {
+    userAgent,
+    platform,
+    browserFamily,
+    browserVersion,
+    secChUA,
+    acceptLanguage: pickRandom(ACCEPT_LANGUAGE_POOL),
+    viewport: { ...pickRandom(VIEWPORT_POOL) },
+  };
+}
+
+/**
+ * Build browser headers using a locked BrowserIdentity.
+ * Ensures all headers are internally consistent for the session.
+ */
+export function buildIdentityHeaders(params: {
+  identity: BrowserIdentity;
+  referer?: string;
+  targetUrl?: string;
+  acceptMarkdown?: boolean;
+}): Record<string, string> {
+  const { identity, referer, targetUrl } = params;
+  const headers: Record<string, string> = {};
+
+  headers["User-Agent"] = identity.userAgent;
+  headers["Accept-Language"] = identity.acceptLanguage;
+  headers["Accept-Encoding"] = "gzip, deflate, br";
+
+  if (params.acceptMarkdown) {
+    headers["Accept"] = "text/markdown, text/html;q=0.9, */*;q=0.1";
+  } else {
+    headers["Accept"] =
+      "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
+  }
+
+  if (identity.browserFamily === "chrome") {
+    headers["Sec-CH-UA"] = identity.secChUA!;
+    headers["Sec-CH-UA-Mobile"] = "?0";
+    headers["Sec-CH-UA-Platform"] = `"${identity.platform}"`;
+    headers["Sec-Fetch-Dest"] = "document";
+    headers["Sec-Fetch-Mode"] = "navigate";
+    headers["Sec-Fetch-User"] = "?1";
+    headers["Upgrade-Insecure-Requests"] = "1";
+
+    // Sec-Fetch-Site depends on referer
+    if (referer && targetUrl) {
+      headers["Sec-Fetch-Site"] = isSameOrigin(referer, targetUrl) ? "same-origin" : "cross-site";
+    } else if (referer) {
+      headers["Sec-Fetch-Site"] = "cross-site";
+    } else {
+      headers["Sec-Fetch-Site"] = "none";
+    }
+  } else if (identity.browserFamily === "firefox") {
+    headers["Sec-Fetch-Dest"] = "document";
+    headers["Sec-Fetch-Mode"] = "navigate";
+    headers["Sec-Fetch-Site"] = referer ? "cross-site" : "none";
+    headers["Sec-Fetch-User"] = "?1";
+    headers["Upgrade-Insecure-Requests"] = "1";
+  } else {
+    headers["Upgrade-Insecure-Requests"] = "1";
+  }
+
+  if (referer) {
+    headers["Referer"] = referer;
+  }
+
+  return headers;
+}
+
+function isSameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
 }
