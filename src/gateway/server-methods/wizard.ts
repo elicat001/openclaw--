@@ -25,12 +25,12 @@ function findWizardSessionOrRespond(params: {
   respond: RespondFn;
   sessionId: string;
 }): WizardSession | null {
-  const session = params.context.wizardSessions.get(params.sessionId);
-  if (!session) {
+  const tracked = params.context.wizardSessions.get(params.sessionId);
+  if (!tracked) {
     params.respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "wizard not found"));
     return null;
   }
-  return session;
+  return tracked.session;
 }
 
 export const wizardHandlers: GatewayRequestHandlers = {
@@ -51,7 +51,7 @@ export const wizardHandlers: GatewayRequestHandlers = {
     const session = new WizardSession((prompter) =>
       context.wizardRunner(opts, defaultRuntime, prompter),
     );
-    context.wizardSessions.set(sessionId, session);
+    context.wizardSessions.set(sessionId, { session, createdAt: Date.now() });
     const result = await session.next();
     if (result.done) {
       context.purgeWizardSession(sessionId);

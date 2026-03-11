@@ -13,9 +13,15 @@ import {
 } from "../secrets/ref-contract.js";
 import { resolveSecretRefString } from "../secrets/resolve.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
-import { formatApiKeyPreview } from "./auth-choice.api-key.js";
-import type { ApplyAuthChoiceParams } from "./auth-choice.apply.js";
+import {
+  formatApiKeyPreview,
+  normalizeApiKeyInput,
+  validateApiKeyInput,
+} from "./auth-choice.api-key.js";
+import type { ApplyAuthChoiceParams, ApplyAuthChoiceResult } from "./auth-choice.apply.js";
 import { applyDefaultModelChoice } from "./auth-choice.default-model.js";
+import { applyPrimaryModel } from "./model-picker.js";
+import { applyAuthProfileConfig } from "./onboard-auth.js";
 import type { SecretInputMode } from "./onboard-types.js";
 
 const ENV_SOURCE_LABEL_RE = /(?:^|:\s)([A-Z][A-Z0-9_]*)$/;
@@ -352,6 +358,132 @@ export function createAuthChoiceDefaultModelApplierForMutableState(
       setAgentModelOverride,
     }),
   );
+}
+
+/**
+ * Shared handler for the common "simple API key" auth choice pattern:
+ * guard on authChoice -> ensureApiKey -> applyAuthProfile -> applyDefaultModelChoice -> return.
+ *
+ * Handles both `setDefaultModel: true` (writes model into config) and
+ * `setDefaultModel: false` (returns agentModelOverride) via applyDefaultModelChoice.
+ */
+export async function applySimpleApiKeyAuthChoice(params: {
+  authParams: ApplyAuthChoiceParams;
+  expectedAuthChoice: string;
+  provider: string;
+  profileId: string;
+  expectedProviders: string[];
+  envLabel: string;
+  promptMessage: string;
+  token?: string;
+  tokenProvider?: string;
+  setCredential: (apiKey: SecretInput, mode?: SecretInputMode) => Promise<void>;
+  defaultModel: string;
+  applyDefaultConfig: (config: ApplyAuthChoiceParams["config"]) => ApplyAuthChoiceParams["config"];
+  applyProviderConfig: (config: ApplyAuthChoiceParams["config"]) => ApplyAuthChoiceParams["config"];
+  noteDefault?: string;
+  noteMessage?: string;
+  noteTitle?: string;
+  normalize?: (value: string) => string;
+  validate?: (value: string) => string | undefined;
+}): Promise<ApplyAuthChoiceResult | null> {
+  const { authParams } = params;
+  if (authParams.authChoice !== params.expectedAuthChoice) {
+    return null;
+  }
+
+  let nextConfig = authParams.config;
+  let agentModelOverride: string | undefined;
+  const noteAgentModel = createAuthChoiceAgentModelNoter(authParams);
+  const requestedSecretInputMode = normalizeSecretInputModeInput(authParams.opts?.secretInputMode);
+
+  await ensureApiKeyFromOptionEnvOrPrompt({
+    token: params.token ?? authParams.opts?.token,
+    tokenProvider: params.tokenProvider ?? params.provider,
+    secretInputMode: requestedSecretInputMode,
+    config: nextConfig,
+    expectedProviders: params.expectedProviders,
+    provider: params.provider,
+    envLabel: params.envLabel,
+    promptMessage: params.promptMessage,
+    normalize: params.normalize ?? normalizeApiKeyInput,
+    validate: params.validate ?? validateApiKeyInput,
+    prompter: authParams.prompter,
+    setCredential: params.setCredential,
+    noteMessage: params.noteMessage,
+    noteTitle: params.noteTitle,
+  });
+
+  nextConfig = applyAuthProfileConfig(nextConfig, {
+    profileId: params.profileId,
+    provider: params.provider,
+    mode: "api_key",
+  });
+
+  const applied = await applyDefaultModelChoice({
+    config: nextConfig,
+    setDefaultModel: authParams.setDefaultModel,
+    defaultModel: params.defaultModel,
+    applyDefaultConfig: params.applyDefaultConfig,
+    applyProviderConfig: params.applyProviderConfig,
+    noteDefault: params.noteDefault ?? params.defaultModel,
+    noteAgentModel,
+    prompter: authParams.prompter,
+  });
+  nextConfig = applied.config;
+  agentModelOverride = applied.agentModelOverride ?? agentModelOverride;
+
+  return { config: nextConfig, agentModelOverride };
+}
+
+/**
+ * Simplified variant that always writes the default model into config via
+ * `applyPrimaryModel` and returns `agentModelOverride`.
+ * Used by providers (volcengine, byteplus) that unconditionally set both.
+ */
+export async function applyApiKeyWithPrimaryModel(params: {
+  authParams: ApplyAuthChoiceParams;
+  expectedAuthChoice: string;
+  provider: string;
+  profileId: string;
+  expectedProviders: string[];
+  envLabel: string;
+  promptMessage: string;
+  token?: string;
+  tokenProvider?: string;
+  setCredential: (apiKey: SecretInput, mode?: SecretInputMode) => Promise<void>;
+  defaultModel: string;
+}): Promise<ApplyAuthChoiceResult | null> {
+  const { authParams } = params;
+  if (authParams.authChoice !== params.expectedAuthChoice) {
+    return null;
+  }
+
+  const requestedSecretInputMode = normalizeSecretInputModeInput(authParams.opts?.secretInputMode);
+  await ensureApiKeyFromOptionEnvOrPrompt({
+    token: params.token ?? authParams.opts?.token,
+    tokenProvider: params.tokenProvider ?? params.provider,
+    secretInputMode: requestedSecretInputMode,
+    config: authParams.config,
+    expectedProviders: params.expectedProviders,
+    provider: params.provider,
+    envLabel: params.envLabel,
+    promptMessage: params.promptMessage,
+    normalize: normalizeApiKeyInput,
+    validate: validateApiKeyInput,
+    prompter: authParams.prompter,
+    setCredential: params.setCredential,
+  });
+  const configWithAuth = applyAuthProfileConfig(authParams.config, {
+    profileId: params.profileId,
+    provider: params.provider,
+    mode: "api_key",
+  });
+  const configWithModel = applyPrimaryModel(configWithAuth, params.defaultModel);
+  return {
+    config: configWithModel,
+    agentModelOverride: params.defaultModel,
+  };
 }
 
 export function normalizeTokenProviderInput(

@@ -163,7 +163,7 @@ authoring plugins:
   `openclaw/plugin-sdk/copilot-proxy`, `openclaw/plugin-sdk/device-pair`,
   `openclaw/plugin-sdk/diagnostics-otel`, `openclaw/plugin-sdk/diffs`,
   `openclaw/plugin-sdk/feishu`,
-  `openclaw/plugin-sdk/google-gemini-cli-auth`, `openclaw/plugin-sdk/googlechat`,
+  `openclaw/plugin-sdk/google-gemini-cli-auth`,
   `openclaw/plugin-sdk/irc`, `openclaw/plugin-sdk/llm-task`,
   `openclaw/plugin-sdk/lobster`, `openclaw/plugin-sdk/matrix`,
   `openclaw/plugin-sdk/mattermost`, `openclaw/plugin-sdk/memory-core`,

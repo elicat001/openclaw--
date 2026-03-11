@@ -36,11 +36,15 @@ function stopMaintenanceTimers(timers: {
   tickInterval: NodeJS.Timeout;
   healthInterval: NodeJS.Timeout;
   dedupeCleanup: NodeJS.Timeout;
+  chatAbortCleanup: { clear: () => void };
+  abortedRunsCleanup: { clear: () => void };
   mediaCleanup: NodeJS.Timeout | null;
 }) {
   clearInterval(timers.tickInterval);
   clearInterval(timers.healthInterval);
   clearInterval(timers.dedupeCleanup);
+  timers.chatAbortCleanup.clear();
+  timers.abortedRunsCleanup.clear();
   if (timers.mediaCleanup) {
     clearInterval(timers.mediaCleanup);
   }

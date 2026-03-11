@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { rotateIfNeeded } from "./transcript-rotation.js";
 
 export type QueuedFileWriter = {
   filePath: string;
@@ -24,6 +25,7 @@ export function getQueuedFileWriter(
     write: (line: string) => {
       queue = queue
         .then(() => ready)
+        .then(() => rotateIfNeeded(filePath))
         .then(() => fs.appendFile(filePath, line, "utf8"))
         .catch(() => undefined);
     },

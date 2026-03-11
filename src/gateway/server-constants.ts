@@ -34,3 +34,18 @@ export const TICK_INTERVAL_MS = 30_000;
 export const HEALTH_REFRESH_INTERVAL_MS = 60_000;
 export const DEDUPE_TTL_MS = 5 * 60_000;
 export const DEDUPE_MAX = 1000;
+
+/** Maximum webhook request payload size in bytes (10 MB). */
+export const MAX_WEBHOOK_PAYLOAD_BYTES = 10 * 1024 * 1024;
+
+/** Maximum webhook requests per source IP within the rate-limit window. */
+export const WEBHOOK_RATE_LIMIT_MAX = 60;
+
+/** Sliding window duration for webhook per-source rate limiting (1 minute). */
+export const WEBHOOK_RATE_LIMIT_WINDOW_MS = 60_000;
+
+/** Hard cap for chatRunBuffers / chatDeltaSentAt maps to prevent unbounded growth. */
+export const MAX_CHAT_RUN_BUFFERS = 10_000;
+
+/** Aborted chat run TTL — reduced from 60min to 30min to limit memory growth. */
+export const ABORTED_RUN_TTL_MS = 30 * 60_000;

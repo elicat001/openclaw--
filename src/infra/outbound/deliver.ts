@@ -5,19 +5,16 @@ import {
   resolveTextChunkLimit,
 } from "../../auto-reply/chunk.js";
 import type { ReplyPayload } from "../../auto-reply/types.js";
-import { resolveChannelMediaMaxBytes } from "../../channels/plugins/media-limits.js";
 import { loadChannelOutboundAdapter } from "../../channels/plugins/outbound/load.js";
 import type {
   ChannelOutboundAdapter,
   ChannelOutboundContext,
 } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
-import { resolveMarkdownTableMode } from "../../config/markdown-tables.js";
 import {
   appendAssistantMessageToSessionTranscript,
   resolveMirroredTranscriptText,
 } from "../../config/sessions.js";
-import type { sendMessageDiscord } from "../../discord/send.js";
 import { fireAndForgetHook } from "../../hooks/fire-and-forget.js";
 import { createInternalHookEvent, triggerInternalHook } from "../../hooks/internal-hooks.js";
 import {
@@ -26,15 +23,9 @@ import {
   toPluginMessageContext,
   toPluginMessageSentEvent,
 } from "../../hooks/message-hook-mappers.js";
-import type { sendMessageIMessage } from "../../imessage/send.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { getAgentScopedMediaLocalRoots } from "../../media/local-roots.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
-import { markdownToSignalTextChunks, type SignalTextStyleRange } from "../../signal/format.js";
-import { sendMessageSignal } from "../../signal/send.js";
-import type { sendMessageSlack } from "../../slack/send.js";
-import type { sendMessageTelegram } from "../../telegram/send.js";
-import type { sendMessageWhatsApp } from "../../web/outbound.js";
 import { throwIfAborted } from "./abort.js";
 import { ackDelivery, enqueueDelivery, failDelivery } from "./delivery-queue.js";
 import type { OutboundIdentity } from "./identity.js";
@@ -48,34 +39,12 @@ export type { NormalizedOutboundPayload } from "./payloads.js";
 export { normalizeOutboundPayloads } from "./payloads.js";
 
 const log = createSubsystemLogger("outbound/deliver");
-const TELEGRAM_TEXT_LIMIT = 4096;
 
-type SendMatrixMessage = (
-  to: string,
-  text: string,
-  opts?: {
-    cfg?: OpenClawConfig;
-    mediaUrl?: string;
-    replyToId?: string;
-    threadId?: string;
-    timeoutMs?: number;
-  },
-) => Promise<{ messageId: string; roomId: string }>;
-
-export type OutboundSendDeps = {
-  sendWhatsApp?: typeof sendMessageWhatsApp;
-  sendTelegram?: typeof sendMessageTelegram;
-  sendDiscord?: typeof sendMessageDiscord;
-  sendSlack?: typeof sendMessageSlack;
-  sendSignal?: typeof sendMessageSignal;
-  sendIMessage?: typeof sendMessageIMessage;
-  sendMatrix?: SendMatrixMessage;
-  sendMSTeams?: (
-    to: string,
-    text: string,
-    opts?: { mediaUrl?: string; mediaLocalRoots?: readonly string[] },
-  ) => Promise<{ messageId: string; conversationId: string }>;
-};
+// Intentionally empty after channel send-function removal; kept as intersection
+// base so HeartbeatDeps = OutboundSendDeps & ChannelHeartbeatDeps still compiles.
+// Using an empty interface (rather than Record<string, never>) allows additional
+// properties to be added via intersection without index-signature conflicts.
+export type OutboundSendDeps = Record<string, unknown>;
 
 export type OutboundDeliveryResult = {
   channel: Exclude<OutboundChannel, "none">;
@@ -272,13 +241,12 @@ function hasChannelDataPayload(payload: ReplyPayload): boolean {
 
 function normalizePayloadForChannelDelivery(
   payload: ReplyPayload,
-  channelId: string,
+  _channelId: string,
 ): ReplyPayload | null {
   const hasMedia = hasMediaPayload(payload);
   const hasChannelData = hasChannelDataPayload(payload);
   const rawText = typeof payload.text === "string" ? payload.text : "";
-  const normalizedText =
-    channelId === "whatsapp" ? rawText.replace(/^(?:[ \t]*\r?\n)+/, "") : rawText;
+  const normalizedText = rawText;
   if (!normalizedText.trim()) {
     if (!hasMedia && !hasChannelData) {
       return null;
@@ -307,17 +275,14 @@ function normalizePayloadsForChannelDelivery(
   const normalizedPayloads: ReplyPayload[] = [];
   for (const payload of normalizeReplyPayloadsForDelivery(payloads)) {
     let sanitizedPayload = payload;
-    // Strip HTML tags for plain-text surfaces (WhatsApp, Signal, etc.)
+    // Strip HTML tags for plain-text surfaces.
     // Models occasionally produce <br>, <b>, etc. that render as literal text.
     // See https://github.com/openclaw/openclaw/issues/31884
     if (isPlainTextSurface(channel) && sanitizedPayload.text) {
-      // Telegram sendPayload uses textMode:"html". Preserve raw HTML in this path.
-      if (!(channel === "telegram" && sanitizedPayload.channelData)) {
-        sanitizedPayload = {
-          ...sanitizedPayload,
-          text: sanitizeForPlainText(sanitizedPayload.text),
-        };
-      }
+      sanitizedPayload = {
+        ...sanitizedPayload,
+        text: sanitizeForPlainText(sanitizedPayload.text),
+      };
     }
     const normalized = normalizePayloadForChannelDelivery(sanitizedPayload, channel);
     if (normalized) {
@@ -535,7 +500,6 @@ async function deliverOutboundPayloadsCore(
   const accountId = params.accountId;
   const deps = params.deps;
   const abortSignal = params.abortSignal;
-  const sendSignal = params.deps?.sendSignal ?? sendMessageSignal;
   const mediaLocalRoots = getAgentScopedMediaLocalRoots(
     cfg,
     params.session?.agentId ?? params.mirror?.agentId,
@@ -559,25 +523,8 @@ async function deliverOutboundPayloadsCore(
         fallbackLimit: handler.textChunkLimit,
       })
     : undefined;
-  const textLimit =
-    channel === "telegram" && typeof configuredTextLimit === "number"
-      ? Math.min(configuredTextLimit, TELEGRAM_TEXT_LIMIT)
-      : configuredTextLimit;
+  const textLimit = configuredTextLimit;
   const chunkMode = handler.chunker ? resolveChunkMode(cfg, channel, accountId) : "length";
-  const isSignalChannel = channel === "signal";
-  const signalTableMode = isSignalChannel
-    ? resolveMarkdownTableMode({ cfg, channel: "signal", accountId })
-    : "code";
-  const signalMaxBytes = isSignalChannel
-    ? resolveChannelMediaMaxBytes({
-        cfg,
-        resolveChannelLimitMb: ({ cfg, accountId }) =>
-          cfg.channels?.signal?.accounts?.[accountId]?.mediaMaxMb ??
-          cfg.channels?.signal?.mediaMaxMb,
-        accountId,
-      })
-    : undefined;
-
   const sendTextChunks = async (
     text: string,
     overrides?: { replyToId?: string | null; threadId?: string | number | null },
@@ -616,58 +563,6 @@ async function deliverOutboundPayloadsCore(
     }
   };
 
-  const sendSignalText = async (text: string, styles: SignalTextStyleRange[]) => {
-    throwIfAborted(abortSignal);
-    return {
-      channel: "signal" as const,
-      ...(await sendSignal(to, text, {
-        cfg,
-        maxBytes: signalMaxBytes,
-        accountId: accountId ?? undefined,
-        textMode: "plain",
-        textStyles: styles,
-      })),
-    };
-  };
-
-  const sendSignalTextChunks = async (text: string) => {
-    throwIfAborted(abortSignal);
-    let signalChunks =
-      textLimit === undefined
-        ? markdownToSignalTextChunks(text, Number.POSITIVE_INFINITY, {
-            tableMode: signalTableMode,
-          })
-        : markdownToSignalTextChunks(text, textLimit, { tableMode: signalTableMode });
-    if (signalChunks.length === 0 && text) {
-      signalChunks = [{ text, styles: [] }];
-    }
-    for (const chunk of signalChunks) {
-      throwIfAborted(abortSignal);
-      results.push(await sendSignalText(chunk.text, chunk.styles));
-    }
-  };
-
-  const sendSignalMedia = async (caption: string, mediaUrl: string) => {
-    throwIfAborted(abortSignal);
-    const formatted = markdownToSignalTextChunks(caption, Number.POSITIVE_INFINITY, {
-      tableMode: signalTableMode,
-    })[0] ?? {
-      text: caption,
-      styles: [],
-    };
-    return {
-      channel: "signal" as const,
-      ...(await sendSignal(to, formatted.text, {
-        cfg,
-        mediaUrl,
-        maxBytes: signalMaxBytes,
-        accountId: accountId ?? undefined,
-        textMode: "plain",
-        textStyles: formatted.styles,
-        mediaLocalRoots,
-      })),
-    };
-  };
   const normalizedPayloads = normalizePayloadsForChannelDelivery(
     payloads,
     channel,
@@ -737,11 +632,7 @@ async function deliverOutboundPayloadsCore(
       }
       if (payloadSummary.mediaUrls.length === 0) {
         const beforeCount = results.length;
-        if (isSignalChannel) {
-          await sendSignalTextChunks(payloadSummary.text);
-        } else {
-          await sendTextChunks(payloadSummary.text, sendOverrides);
-        }
+        await sendTextChunks(payloadSummary.text, sendOverrides);
         const messageId = results.at(-1)?.messageId;
         emitMessageSent({
           success: results.length > beforeCount,
@@ -783,15 +674,9 @@ async function deliverOutboundPayloadsCore(
         throwIfAborted(abortSignal);
         const caption = first ? payloadSummary.text : "";
         first = false;
-        if (isSignalChannel) {
-          const delivery = await sendSignalMedia(caption, url);
-          results.push(delivery);
-          lastMessageId = delivery.messageId;
-        } else {
-          const delivery = await handler.sendMedia(caption, url, sendOverrides);
-          results.push(delivery);
-          lastMessageId = delivery.messageId;
-        }
+        const delivery = await handler.sendMedia(caption, url, sendOverrides);
+        results.push(delivery);
+        lastMessageId = delivery.messageId;
       }
       emitMessageSent({
         success: true,

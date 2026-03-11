@@ -31,7 +31,7 @@ import { assertSupportedRuntime } from "./infra/runtime-guard.js";
 import { installUnhandledRejectionHandler } from "./infra/unhandled-rejections.js";
 import { enableConsoleCapture } from "./logging.js";
 import { runCommandWithTimeout, runExec } from "./process/exec.js";
-import { assertWebChannel, normalizeE164, toWhatsappJid } from "./utils.js";
+import { normalizeE164 } from "./utils.js";
 
 loadDotEnv({ quiet: true });
 normalizeEnv();
@@ -48,7 +48,6 @@ import { buildProgram } from "./cli/program.js";
 const program = buildProgram();
 
 export {
-  assertWebChannel,
   applyTemplate,
   createDefaultDeps,
   deriveSessionKey,
@@ -68,7 +67,6 @@ export {
   runCommandWithTimeout,
   runExec,
   saveSessionStore,
-  toWhatsappJid,
   waitForever,
 };
 

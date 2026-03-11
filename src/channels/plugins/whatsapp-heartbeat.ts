@@ -3,7 +3,6 @@ import { loadSessionStore, resolveStorePath } from "../../config/sessions.js";
 import { readChannelAllowFromStoreSync } from "../../pairing/pairing-store.js";
 import { DEFAULT_ACCOUNT_ID } from "../../routing/session-key.js";
 import { normalizeE164 } from "../../utils.js";
-import { normalizeChatChannelId } from "../registry.js";
 
 type HeartbeatRecipientsResult = { recipients: string[]; source: string };
 type HeartbeatRecipientsOpts = { to?: string; all?: boolean };
@@ -25,7 +24,7 @@ function getSessionRecipients(cfg: OpenClawConfig) {
     .filter(([key]) => !isGroupKey(key) && !isCronKey(key))
     .map(([_, entry]) => ({
       to:
-        normalizeChatChannelId(entry?.lastChannel) === "whatsapp" && entry?.lastTo
+        entry?.lastChannel?.toLowerCase() === "whatsapp" && entry?.lastTo
           ? normalizeE164(entry.lastTo)
           : "",
       updatedAt: entry?.updatedAt ?? 0,
@@ -55,7 +54,7 @@ export function resolveWhatsAppHeartbeatRecipients(
   const sessionRecipients = getSessionRecipients(cfg);
   const configuredAllowFrom =
     Array.isArray(cfg.channels?.whatsapp?.allowFrom) && cfg.channels.whatsapp.allowFrom.length > 0
-      ? cfg.channels.whatsapp.allowFrom.filter((v) => v !== "*").map(normalizeE164)
+      ? cfg.channels.whatsapp.allowFrom.filter((v: string) => v !== "*").map(normalizeE164)
       : [];
   const storeAllowFrom = readChannelAllowFromStoreSync(
     "whatsapp",

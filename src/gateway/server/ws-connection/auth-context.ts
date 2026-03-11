@@ -1,5 +1,9 @@
 import type { IncomingMessage } from "node:http";
 import {
+  type DeviceTokenReplayGuard,
+  getSharedDeviceTokenReplayGuard,
+} from "../../../infra/device-token-replay-guard.js";
+import {
   AUTH_RATE_LIMIT_SCOPE_DEVICE_TOKEN,
   AUTH_RATE_LIMIT_SCOPE_SHARED_SECRET,
   type AuthRateLimiter,
@@ -167,6 +171,8 @@ export async function resolveConnectAuthDecision(params: {
     role: string;
     scopes: string[];
   }) => Promise<VerifyDeviceTokenResult>;
+  /** Optional replay guard; defaults to the shared singleton. */
+  replayGuard?: DeviceTokenReplayGuard;
 }): Promise<ConnectAuthDecision> {
   let authResult = params.state.authResult;
   let authOk = params.state.authOk;
@@ -175,6 +181,16 @@ export async function resolveConnectAuthDecision(params: {
   const deviceTokenCandidate = params.state.deviceTokenCandidate;
   if (!params.hasDeviceIdentity || !params.deviceId || authOk || !deviceTokenCandidate) {
     return { authResult, authOk, authMethod };
+  }
+
+  // Anti-replay: reject tokens that were already used within the TTL window.
+  const replayGuard = params.replayGuard ?? getSharedDeviceTokenReplayGuard();
+  if (replayGuard.check(params.deviceId, params.role, deviceTokenCandidate)) {
+    return {
+      authResult: { ok: false, reason: "device_token_replay" },
+      authOk: false,
+      authMethod,
+    };
   }
 
   if (params.rateLimiter) {

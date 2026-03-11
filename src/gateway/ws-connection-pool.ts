@@ -19,6 +19,8 @@ export interface WsConnectionEntry {
   lastPongAt: number;
   reconnectAttempts: number;
   metadata?: Record<string, unknown>;
+  /** Timestamp (ms) of the most recent successful authentication. */
+  lastAuthAt?: number;
 }
 
 export interface WsConnectionPoolOptions {
@@ -28,7 +30,12 @@ export interface WsConnectionPoolOptions {
   reconnectBaseMs?: number;
   reconnectMaxMs?: number;
   reconnectMaxAttempts?: number;
+  /** Maximum session age (ms) before requiring re-authentication. Default: 30 minutes. */
+  sessionMaxAgeMs?: number;
 }
+
+/** Default session max age: 30 minutes. */
+const DEFAULT_SESSION_MAX_AGE_MS = 30 * 60 * 1000;
 
 const DEFAULT_OPTIONS: Required<WsConnectionPoolOptions> = {
   maxConnections: 100,
@@ -37,6 +44,7 @@ const DEFAULT_OPTIONS: Required<WsConnectionPoolOptions> = {
   reconnectBaseMs: 1_000,
   reconnectMaxMs: 60_000,
   reconnectMaxAttempts: 10,
+  sessionMaxAgeMs: DEFAULT_SESSION_MAX_AGE_MS,
 };
 
 export interface WsConnectionPool {
@@ -47,7 +55,11 @@ export interface WsConnectionPool {
   size(): number;
   list(): WsConnectionEntry[];
   recordPong(id: string): void;
+  /** Record a successful authentication timestamp for the given connection. */
+  recordAuth(id: string): void;
   getStaleConnections(): WsConnectionEntry[];
+  /** Return connections whose session has exceeded `sessionMaxAgeMs` since last auth. */
+  getSessionExpiredConnections(): WsConnectionEntry[];
   startHeartbeat(pingFn: (entry: WsConnectionEntry) => void): void;
   stopHeartbeat(): void;
   close(): void;
@@ -74,6 +86,7 @@ export function createWsConnectionPool(opts?: WsConnectionPoolOptions): WsConnec
         connectedAt: now,
         lastPingAt: now,
         lastPongAt: now,
+        lastAuthAt: now,
         reconnectAttempts: 0,
         metadata,
       });
@@ -107,6 +120,13 @@ export function createWsConnectionPool(opts?: WsConnectionPoolOptions): WsConnec
       }
     },
 
+    recordAuth(id: string): void {
+      const entry = connections.get(id);
+      if (entry) {
+        entry.lastAuthAt = Date.now();
+      }
+    },
+
     getStaleConnections(): WsConnectionEntry[] {
       const now = Date.now();
       const stale: WsConnectionEntry[] = [];
@@ -116,6 +136,18 @@ export function createWsConnectionPool(opts?: WsConnectionPoolOptions): WsConnec
         }
       }
       return stale;
+    },
+
+    getSessionExpiredConnections(): WsConnectionEntry[] {
+      const now = Date.now();
+      const expired: WsConnectionEntry[] = [];
+      for (const entry of connections.values()) {
+        const authTs = entry.lastAuthAt ?? entry.connectedAt;
+        if (now - authTs > options.sessionMaxAgeMs) {
+          expired.push(entry);
+        }
+      }
+      return expired;
     },
 
     startHeartbeat(pingFn: (entry: WsConnectionEntry) => void): void {

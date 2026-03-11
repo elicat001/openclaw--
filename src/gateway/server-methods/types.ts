@@ -3,7 +3,6 @@ import type { createDefaultDeps } from "../../cli/deps.js";
 import type { HealthSummary } from "../../commands/health.js";
 import type { CronService } from "../../cron/service.js";
 import type { createSubsystemLogger } from "../../logging/subsystem.js";
-import type { WizardSession } from "../../wizard/session.js";
 import type { ChatAbortControllerEntry } from "../chat-abort.js";
 import type { ExecApprovalManager } from "../exec-approval-manager.js";
 import type { NodeRegistry } from "../node-registry.js";
@@ -11,6 +10,7 @@ import type { ConnectParams, ErrorShape, RequestFrame } from "../protocol/index.
 import type { GatewayBroadcastFn, GatewayBroadcastToConnIdsFn } from "../server-broadcast.js";
 import type { ChannelRuntimeSnapshot } from "../server-channels.js";
 import type { DedupeEntry } from "../server-shared.js";
+import type { TrackedWizardSession } from "../server-wizard-sessions.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
@@ -65,7 +65,7 @@ export type GatewayRequestContext = {
   ) => { sessionKey: string; clientRunId: string } | undefined;
   registerToolEventRecipient: (runId: string, connId: string) => void;
   dedupe: Map<string, DedupeEntry>;
-  wizardSessions: Map<string, WizardSession>;
+  wizardSessions: Map<string, TrackedWizardSession>;
   findRunningWizard: () => string | null;
   purgeWizardSession: (id: string) => void;
   getRuntimeSnapshot: () => ChannelRuntimeSnapshot;

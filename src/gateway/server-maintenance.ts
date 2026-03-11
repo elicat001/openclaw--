@@ -3,14 +3,42 @@ import { cleanOldMedia } from "../media/store.js";
 import { abortChatRunById, type ChatAbortControllerEntry } from "./chat-abort.js";
 import type { ChatRunEntry } from "./server-chat.js";
 import {
+  ABORTED_RUN_TTL_MS,
   DEDUPE_MAX,
   DEDUPE_TTL_MS,
   HEALTH_REFRESH_INTERVAL_MS,
+  MAX_CHAT_RUN_BUFFERS,
   TICK_INTERVAL_MS,
 } from "./server-constants.js";
 import type { DedupeEntry } from "./server-shared.js";
 import { formatError } from "./server-utils.js";
 import { setBroadcastHealthUpdate } from "./server/health-state.js";
+
+/**
+ * Schedule a recurring task with an initial offset to stagger timers.
+ * Returns a cleanup function that clears both the initial timeout and the
+ * recurring interval.
+ */
+function scheduleStaggered(
+  fn: () => void,
+  intervalMs: number,
+  offsetMs: number,
+): { clear: () => void; ref: ReturnType<typeof setTimeout> } {
+  let interval: ReturnType<typeof setInterval> | null = null;
+  const timeout = setTimeout(() => {
+    fn();
+    interval = setInterval(fn, intervalMs);
+  }, offsetMs);
+  return {
+    ref: timeout,
+    clear() {
+      clearTimeout(timeout);
+      if (interval !== null) {
+        clearInterval(interval);
+      }
+    },
+  };
+}
 
 export function startGatewayMaintenanceTimers(params: {
   broadcast: (
@@ -38,11 +66,14 @@ export function startGatewayMaintenanceTimers(params: {
   ) => ChatRunEntry | undefined;
   agentRunSeq: Map<string, number>;
   nodeSendToSession: (sessionKey: string, event: string, payload: unknown) => void;
+  cleanupWizardSessions?: () => void;
   mediaCleanupTtlMs?: number;
 }): {
   tickInterval: ReturnType<typeof setInterval>;
   healthInterval: ReturnType<typeof setInterval>;
   dedupeCleanup: ReturnType<typeof setInterval>;
+  chatAbortCleanup: { clear: () => void };
+  abortedRunsCleanup: { clear: () => void };
   mediaCleanup: ReturnType<typeof setInterval> | null;
 } {
   setBroadcastHealthUpdate((snap: HealthSummary) => {
@@ -74,7 +105,9 @@ export function startGatewayMaintenanceTimers(params: {
     .refreshGatewayHealthSnapshot({ probe: true })
     .catch((err) => params.logHealth.error(`initial refresh failed: ${formatError(err)}`));
 
-  // dedupe cache cleanup
+  // --- Staggered cleanup timers (split to avoid GC spikes) ---
+
+  // dedupe + agentRunSeq cleanup: every 45s (no offset, fires first)
   const dedupeCleanup = setInterval(() => {
     const AGENT_RUN_SEQ_MAX = 10_000;
     const now = Date.now();
@@ -102,38 +135,88 @@ export function startGatewayMaintenanceTimers(params: {
       }
     }
 
-    for (const [runId, entry] of params.chatAbortControllers) {
-      if (now <= entry.expiresAtMs) {
-        continue;
+    // Hard cap: evict oldest entries from chatRunBuffers / chatDeltaSentAt
+    if (params.chatRunBuffers.size > MAX_CHAT_RUN_BUFFERS) {
+      const excess = params.chatRunBuffers.size - MAX_CHAT_RUN_BUFFERS;
+      let removed = 0;
+      for (const key of params.chatRunBuffers.keys()) {
+        params.chatRunBuffers.delete(key);
+        params.chatDeltaSentAt.delete(key);
+        removed += 1;
+        if (removed >= excess) {
+          break;
+        }
       }
-      abortChatRunById(
-        {
-          chatAbortControllers: params.chatAbortControllers,
-          chatRunBuffers: params.chatRunBuffers,
-          chatDeltaSentAt: params.chatDeltaSentAt,
-          chatAbortedRuns: params.chatRunState.abortedRuns,
-          removeChatRun: params.removeChatRun,
-          agentRunSeq: params.agentRunSeq,
-          broadcast: params.broadcast,
-          nodeSendToSession: params.nodeSendToSession,
-        },
-        { runId, sessionKey: entry.sessionKey, stopReason: "timeout" },
-      );
+    }
+    if (params.chatDeltaSentAt.size > MAX_CHAT_RUN_BUFFERS) {
+      const excess = params.chatDeltaSentAt.size - MAX_CHAT_RUN_BUFFERS;
+      let removed = 0;
+      for (const key of params.chatDeltaSentAt.keys()) {
+        params.chatDeltaSentAt.delete(key);
+        removed += 1;
+        if (removed >= excess) {
+          break;
+        }
+      }
     }
 
-    const ABORTED_RUN_TTL_MS = 60 * 60_000;
-    for (const [runId, abortedAt] of params.chatRunState.abortedRuns) {
-      if (now - abortedAt <= ABORTED_RUN_TTL_MS) {
-        continue;
+    // Purge stale wizard sessions
+    params.cleanupWizardSessions?.();
+  }, 45_000);
+
+  // chatAbortControllers cleanup: every 90s, offset by 15s
+  const chatAbortCleanup = scheduleStaggered(
+    () => {
+      const now = Date.now();
+      for (const [runId, entry] of params.chatAbortControllers) {
+        if (now <= entry.expiresAtMs) {
+          continue;
+        }
+        abortChatRunById(
+          {
+            chatAbortControllers: params.chatAbortControllers,
+            chatRunBuffers: params.chatRunBuffers,
+            chatDeltaSentAt: params.chatDeltaSentAt,
+            chatAbortedRuns: params.chatRunState.abortedRuns,
+            removeChatRun: params.removeChatRun,
+            agentRunSeq: params.agentRunSeq,
+            broadcast: params.broadcast,
+            nodeSendToSession: params.nodeSendToSession,
+          },
+          { runId, sessionKey: entry.sessionKey, stopReason: "timeout" },
+        );
       }
-      params.chatRunState.abortedRuns.delete(runId);
-      params.chatRunBuffers.delete(runId);
-      params.chatDeltaSentAt.delete(runId);
-    }
-  }, 60_000);
+    },
+    90_000,
+    15_000,
+  );
+
+  // abortedRuns cleanup: every 60s, offset by 30s
+  const abortedRunsCleanup = scheduleStaggered(
+    () => {
+      const now = Date.now();
+      for (const [runId, abortedAt] of params.chatRunState.abortedRuns) {
+        if (now - abortedAt <= ABORTED_RUN_TTL_MS) {
+          continue;
+        }
+        params.chatRunState.abortedRuns.delete(runId);
+        params.chatRunBuffers.delete(runId);
+        params.chatDeltaSentAt.delete(runId);
+      }
+    },
+    60_000,
+    30_000,
+  );
 
   if (typeof params.mediaCleanupTtlMs !== "number") {
-    return { tickInterval, healthInterval, dedupeCleanup, mediaCleanup: null };
+    return {
+      tickInterval,
+      healthInterval,
+      dedupeCleanup,
+      chatAbortCleanup,
+      abortedRunsCleanup,
+      mediaCleanup: null,
+    };
   }
 
   let mediaCleanupInFlight: Promise<void> | null = null;
@@ -160,5 +243,12 @@ export function startGatewayMaintenanceTimers(params: {
 
   void runMediaCleanup();
 
-  return { tickInterval, healthInterval, dedupeCleanup, mediaCleanup };
+  return {
+    tickInterval,
+    healthInterval,
+    dedupeCleanup,
+    chatAbortCleanup,
+    abortedRunsCleanup,
+    mediaCleanup,
+  };
 }

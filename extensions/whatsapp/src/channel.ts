@@ -9,7 +9,6 @@ import {
   collectWhatsAppStatusIssues,
   createActionGate,
   DEFAULT_ACCOUNT_ID,
-  getChatChannelMeta,
   listWhatsAppAccountIds,
   listWhatsAppDirectoryGroupsFromConfig,
   listWhatsAppDirectoryPeersFromConfig,
@@ -33,12 +32,22 @@ import {
   whatsappOnboardingAdapter,
   WhatsAppConfigSchema,
   type ChannelMessageActionName,
+  type ChannelMeta,
   type ChannelPlugin,
+  type PluginRuntime,
   type ResolvedWhatsAppAccount,
 } from "openclaw/plugin-sdk/whatsapp";
 import { getWhatsAppRuntime } from "./runtime.js";
 
-const meta = getChatChannelMeta("whatsapp");
+const meta: ChannelMeta = {
+  id: "whatsapp",
+  label: "WhatsApp",
+  selectionLabel: "WhatsApp",
+  docsPath: "/channels/whatsapp",
+  docsLabel: "whatsapp",
+  blurb: "WhatsApp messaging via web.",
+  order: 10,
+};
 
 export const whatsappPlugin: ChannelPlugin<ResolvedWhatsAppAccount> = {
   id: "whatsapp",
@@ -292,7 +301,10 @@ export const whatsappPlugin: ChannelPlugin<ResolvedWhatsAppAccount> = {
     resolveTarget: ({ to, allowFrom, mode }) =>
       resolveWhatsAppOutboundTarget({ to, allowFrom, mode }),
     sendText: async ({ cfg, to, text, accountId, deps, gifPlayback }) => {
-      const send = deps?.sendWhatsApp ?? getWhatsAppRuntime().channel.whatsapp.sendMessageWhatsApp;
+      const send =
+        (deps?.sendWhatsApp as
+          | PluginRuntime["channel"]["whatsapp"]["sendMessageWhatsApp"]
+          | undefined) ?? getWhatsAppRuntime().channel.whatsapp.sendMessageWhatsApp;
       const result = await send(to, text, {
         verbose: false,
         cfg,
@@ -311,7 +323,10 @@ export const whatsappPlugin: ChannelPlugin<ResolvedWhatsAppAccount> = {
       deps,
       gifPlayback,
     }) => {
-      const send = deps?.sendWhatsApp ?? getWhatsAppRuntime().channel.whatsapp.sendMessageWhatsApp;
+      const send =
+        (deps?.sendWhatsApp as
+          | PluginRuntime["channel"]["whatsapp"]["sendMessageWhatsApp"]
+          | undefined) ?? getWhatsAppRuntime().channel.whatsapp.sendMessageWhatsApp;
       const result = await send(to, text, {
         verbose: false,
         cfg,

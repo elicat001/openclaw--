@@ -6,6 +6,7 @@ import { onAgentEvent } from "../infra/agent-events.js";
 import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
 import { scopedHeartbeatWakeOptions } from "../routing/session-key.js";
+import { rotateIfNeeded } from "./transcript-rotation.js";
 
 const DEFAULT_STREAM_FLUSH_MS = 2_500;
 const DEFAULT_NO_OUTPUT_NOTICE_MS = 60_000;
@@ -132,6 +133,7 @@ export function startAcpSpawnParentStreamRelay(params: {
           });
           logDirReady = true;
         }
+        await rotateIfNeeded(logPath);
         await appendFile(logPath, chunk, {
           encoding: "utf-8",
           mode: 0o600,

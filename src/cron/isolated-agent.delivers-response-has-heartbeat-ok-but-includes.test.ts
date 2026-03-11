@@ -13,25 +13,20 @@ async function withTempHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
   return withTempHomeBase(fn, { prefix: "openclaw-cron-heartbeat-suite-" });
 }
 
-async function createTelegramDeliveryFixture(home: string): Promise<{
+async function createWhatsAppDeliveryFixture(home: string): Promise<{
   storePath: string;
   deps: CliDeps;
 }> {
   const storePath = await writeSessionStore(home, {
-    lastProvider: "telegram",
-    lastChannel: "telegram",
+    lastProvider: "whatsapp",
+    lastChannel: "whatsapp",
     lastTo: "123",
   });
   const deps: CliDeps = {
-    sendMessageSlack: vi.fn(),
-    sendMessageWhatsApp: vi.fn(),
-    sendMessageTelegram: vi.fn().mockResolvedValue({
-      messageId: "t1",
-      chatId: "123",
+    sendMessageWhatsApp: vi.fn().mockResolvedValue({
+      messageId: "w1",
+      to: "123",
     }),
-    sendMessageDiscord: vi.fn(),
-    sendMessageSignal: vi.fn(),
-    sendMessageIMessage: vi.fn(),
   };
   return { storePath, deps };
 }
@@ -46,7 +41,7 @@ function mockEmbeddedAgentPayloads(payloads: Array<{ text: string; mediaUrl?: st
   });
 }
 
-async function runTelegramAnnounceTurn(params: {
+async function runWhatsAppAnnounceTurn(params: {
   home: string;
   storePath: string;
   deps: CliDeps;
@@ -61,7 +56,7 @@ async function runTelegramAnnounceTurn(params: {
         kind: "agentTurn",
         message: "do it",
       }),
-      delivery: { mode: "announce", channel: "telegram", to: "123" },
+      delivery: { mode: "announce", channel: "whatsapp", to: "123" },
     },
     message: "do it",
     sessionKey: "cron:job-1",
@@ -75,19 +70,16 @@ describe("runCronIsolatedAgentTurn", () => {
     setupIsolatedAgentTurnMocks({ fast: true });
   });
 
-  it("does not fan out telegram cron delivery across allowFrom entries", async () => {
+  it("does not fan out whatsapp cron delivery across allowFrom entries", async () => {
     await withTempHome(async (home) => {
-      const { storePath, deps } = await createTelegramDeliveryFixture(home);
+      const { storePath, deps } = await createWhatsAppDeliveryFixture(home);
       mockEmbeddedAgentPayloads([
         { text: "HEARTBEAT_OK", mediaUrl: "https://example.com/img.png" },
       ]);
 
       const cfg = makeCfg(home, storePath, {
         channels: {
-          telegram: {
-            botToken: "tok",
-            allowFrom: ["111", "222", "333"],
-          },
+          whatsapp: {},
         },
       });
 
@@ -99,7 +91,7 @@ describe("runCronIsolatedAgentTurn", () => {
             kind: "agentTurn",
             message: "deliver once",
           }),
-          delivery: { mode: "announce", channel: "telegram", to: "123" },
+          delivery: { mode: "announce", channel: "whatsapp", to: "123" },
         },
         message: "deliver once",
         sessionKey: "cron:job-1",
@@ -108,8 +100,8 @@ describe("runCronIsolatedAgentTurn", () => {
 
       expect(res.status).toBe("ok");
       expect(res.delivered).toBe(true);
-      expect(deps.sendMessageTelegram).toHaveBeenCalledTimes(1);
-      expect(deps.sendMessageTelegram).toHaveBeenCalledWith(
+      expect(deps.sendMessageWhatsApp).toHaveBeenCalledTimes(1);
+      expect(deps.sendMessageWhatsApp).toHaveBeenCalledWith(
         "123",
         "HEARTBEAT_OK",
         expect.objectContaining({ accountId: undefined }),
@@ -119,13 +111,13 @@ describe("runCronIsolatedAgentTurn", () => {
 
   it("suppresses announce delivery for multi-payload narration ending in HEARTBEAT_OK", async () => {
     await withTempHome(async (home) => {
-      const { storePath, deps } = await createTelegramDeliveryFixture(home);
+      const { storePath, deps } = await createWhatsAppDeliveryFixture(home);
       mockEmbeddedAgentPayloads([
         { text: "Checked inbox and calendar. Nothing actionable yet." },
         { text: "HEARTBEAT_OK" },
       ]);
 
-      const res = await runTelegramAnnounceTurn({
+      const res = await runWhatsAppAnnounceTurn({
         home,
         storePath,
         deps,
@@ -133,32 +125,32 @@ describe("runCronIsolatedAgentTurn", () => {
 
       expect(res.status).toBe("ok");
       expect(res.delivered).toBe(false);
-      expect(deps.sendMessageTelegram).not.toHaveBeenCalled();
+      expect(deps.sendMessageWhatsApp).not.toHaveBeenCalled();
       expect(runSubagentAnnounceFlow).not.toHaveBeenCalled();
     });
   });
 
   it("handles media heartbeat delivery and last-target text delivery", async () => {
     await withTempHome(async (home) => {
-      const { storePath, deps } = await createTelegramDeliveryFixture(home);
+      const { storePath, deps } = await createWhatsAppDeliveryFixture(home);
 
       // Media should still be delivered even if text is just HEARTBEAT_OK.
       mockEmbeddedAgentPayloads([
         { text: "HEARTBEAT_OK", mediaUrl: "https://example.com/img.png" },
       ]);
 
-      const mediaRes = await runTelegramAnnounceTurn({
+      const mediaRes = await runWhatsAppAnnounceTurn({
         home,
         storePath,
         deps,
       });
 
       expect(mediaRes.status).toBe("ok");
-      expect(deps.sendMessageTelegram).toHaveBeenCalled();
+      expect(deps.sendMessageWhatsApp).toHaveBeenCalled();
       expect(runSubagentAnnounceFlow).not.toHaveBeenCalled();
 
       vi.mocked(runSubagentAnnounceFlow).mockClear();
-      vi.mocked(deps.sendMessageTelegram).mockClear();
+      vi.mocked(deps.sendMessageWhatsApp).mockClear();
       mockEmbeddedAgentPayloads([{ text: "HEARTBEAT_OK 🦞" }]);
 
       const cfg = makeCfg(home, storePath);
@@ -188,14 +180,14 @@ describe("runCronIsolatedAgentTurn", () => {
       expect(keepRes.status).toBe("ok");
       expect(keepRes.delivered).toBe(true);
       expect(runSubagentAnnounceFlow).not.toHaveBeenCalled();
-      expect(deps.sendMessageTelegram).toHaveBeenCalledTimes(1);
-      expect(deps.sendMessageTelegram).toHaveBeenCalledWith(
+      expect(deps.sendMessageWhatsApp).toHaveBeenCalledTimes(1);
+      expect(deps.sendMessageWhatsApp).toHaveBeenCalledWith(
         "123",
         "HEARTBEAT_OK 🦞",
         expect.objectContaining({ accountId: undefined }),
       );
 
-      vi.mocked(deps.sendMessageTelegram).mockClear();
+      vi.mocked(deps.sendMessageWhatsApp).mockClear();
       vi.mocked(runSubagentAnnounceFlow).mockClear();
       vi.mocked(callGateway).mockClear();
 
@@ -218,8 +210,8 @@ describe("runCronIsolatedAgentTurn", () => {
       expect(deleteRes.status).toBe("ok");
       expect(deleteRes.delivered).toBe(true);
       expect(runSubagentAnnounceFlow).not.toHaveBeenCalled();
-      expect(deps.sendMessageTelegram).toHaveBeenCalledTimes(1);
-      expect(deps.sendMessageTelegram).toHaveBeenCalledWith(
+      expect(deps.sendMessageWhatsApp).toHaveBeenCalledTimes(1);
+      expect(deps.sendMessageWhatsApp).toHaveBeenCalledWith(
         "123",
         "HEARTBEAT_OK 🦞",
         expect.objectContaining({ accountId: undefined }),
@@ -240,7 +232,7 @@ describe("runCronIsolatedAgentTurn", () => {
 
   it("skips structured outbound delivery when timeout abort is already set", async () => {
     await withTempHome(async (home) => {
-      const { storePath, deps } = await createTelegramDeliveryFixture(home);
+      const { storePath, deps } = await createWhatsAppDeliveryFixture(home);
       const controller = new AbortController();
       controller.abort("cron: job execution timed out");
 
@@ -248,7 +240,7 @@ describe("runCronIsolatedAgentTurn", () => {
         { text: "HEARTBEAT_OK", mediaUrl: "https://example.com/img.png" },
       ]);
 
-      const res = await runTelegramAnnounceTurn({
+      const res = await runWhatsAppAnnounceTurn({
         home,
         storePath,
         deps,
@@ -257,7 +249,7 @@ describe("runCronIsolatedAgentTurn", () => {
 
       expect(res.status).toBe("error");
       expect(res.error).toContain("timed out");
-      expect(deps.sendMessageTelegram).not.toHaveBeenCalled();
+      expect(deps.sendMessageWhatsApp).not.toHaveBeenCalled();
       expect(runSubagentAnnounceFlow).not.toHaveBeenCalled();
     });
   });

@@ -136,6 +136,7 @@ function buildAdminDashboardData(): AdminDashboardData {
     sessions,
     gatewayUptime: uptimeMs,
     memoryUsageMb: Math.round(memoryUsageMb * 10) / 10,
+    agentReach: null,
   };
 }
 

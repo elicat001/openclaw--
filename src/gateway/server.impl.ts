@@ -560,7 +560,8 @@ export async function startGatewayServer(
   }
 
   const wizardRunner = opts.wizardRunner ?? runOnboardingWizard;
-  const { wizardSessions, findRunningWizard, purgeWizardSession } = createWizardSessionTracker();
+  const { wizardSessions, findRunningWizard, purgeWizardSession, cleanupWizardSessions } =
+    createWizardSessionTracker();
 
   const deps = createDefaultDeps();
   let canvasHostServer: CanvasHostServer | null = null;
@@ -698,12 +699,22 @@ export async function startGatewayServer(
       });
 
   const noopInterval = () => setInterval(() => {}, 1 << 30);
+  const noopClearable = { clear: () => {} };
   let tickInterval = noopInterval();
   let healthInterval = noopInterval();
   let dedupeCleanup = noopInterval();
+  let chatAbortCleanup: { clear: () => void } = noopClearable;
+  let abortedRunsCleanup: { clear: () => void } = noopClearable;
   let mediaCleanup: ReturnType<typeof setInterval> | null = null;
   if (!minimalTestGateway) {
-    ({ tickInterval, healthInterval, dedupeCleanup, mediaCleanup } = startGatewayMaintenanceTimers({
+    ({
+      tickInterval,
+      healthInterval,
+      dedupeCleanup,
+      chatAbortCleanup,
+      abortedRunsCleanup,
+      mediaCleanup,
+    } = startGatewayMaintenanceTimers({
       broadcast,
       nodeSendToAllSubscribed,
       getPresenceVersion,
@@ -718,6 +729,7 @@ export async function startGatewayServer(
       removeChatRun,
       agentRunSeq,
       nodeSendToSession,
+      cleanupWizardSessions,
       ...(typeof cfgAtStart.media?.ttlHours === "number"
         ? { mediaCleanupTtlMs: resolveMediaCleanupTtlMs(cfgAtStart.media.ttlHours) }
         : {}),
@@ -1027,6 +1039,8 @@ export async function startGatewayServer(
     tickInterval,
     healthInterval,
     dedupeCleanup,
+    chatAbortCleanup,
+    abortedRunsCleanup,
     mediaCleanup,
     agentUnsub,
     heartbeatUnsub,

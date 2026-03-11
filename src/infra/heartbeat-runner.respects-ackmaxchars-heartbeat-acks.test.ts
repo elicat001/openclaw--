@@ -48,9 +48,7 @@ describe("runHeartbeatOnce ack handling", () => {
     } = {},
   ) {
     return {
-      ...(params.sendWhatsApp
-        ? { sendWhatsApp: params.sendWhatsApp as unknown as HeartbeatDeps["sendWhatsApp"] }
-        : {}),
+      ...(params.sendWhatsApp ? { sendWhatsApp: params.sendWhatsApp } : {}),
       getQueueSize: params.getQueueSize ?? (() => 0),
       nowMs: params.nowMs ?? (() => 0),
       webAuthExists: params.webAuthExists ?? (async () => true),
@@ -66,9 +64,7 @@ describe("runHeartbeatOnce ack handling", () => {
     } = {},
   ) {
     return {
-      ...(params.sendTelegram
-        ? { sendTelegram: params.sendTelegram as unknown as HeartbeatDeps["sendTelegram"] }
-        : {}),
+      ...(params.sendTelegram ? { sendTelegram: params.sendTelegram } : {}),
       getQueueSize: params.getQueueSize ?? (() => 0),
       nowMs: params.nowMs ?? (() => 0),
     } satisfies HeartbeatDeps;

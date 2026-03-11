@@ -24,7 +24,6 @@ import type {
 } from "../config/types.tts.js";
 import { logVerbose } from "../globals.js";
 import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
-import { stripMarkdown } from "../line/markdown-to-line.js";
 import { isVoiceCompatibleAudio } from "../media/audio.js";
 import { CONFIG_DIR, resolveUserPath } from "../utils.js";
 import {
@@ -43,6 +42,41 @@ import {
   summarizeText,
 } from "./tts-core.js";
 export { OPENAI_TTS_MODELS, OPENAI_TTS_VOICES } from "./tts-core.js";
+
+/**
+ * Lightweight markdown stripping for TTS input.
+ * Removes headings, bold/italic markers, links, images, code fences, and
+ * inline code so the speech synthesiser receives plain text.
+ */
+function stripMarkdown(text: string): string {
+  return (
+    text
+      // Code fences (``` blocks)
+      .replace(/```[\s\S]*?```/g, "")
+      // Inline code
+      .replace(/`([^`]+)`/g, "$1")
+      // Images ![alt](url)
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+      // Links [text](url)
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+      // Headings (### etc.)
+      .replace(/^#{1,6}\s+/gm, "")
+      // Bold / italic markers
+      .replace(/(\*{1,3}|_{1,3})(.*?)\1/g, "$2")
+      // Strikethrough
+      .replace(/~~(.*?)~~/g, "$1")
+      // Horizontal rules
+      .replace(/^[-*_]{3,}\s*$/gm, "")
+      // Block quotes
+      .replace(/^>\s?/gm, "")
+      // Unordered list markers
+      .replace(/^[\s]*[-+*]\s+/gm, "")
+      // Ordered list markers
+      .replace(/^[\s]*\d+\.\s+/gm, "")
+      // Collapse multiple blank lines
+      .replace(/\n{3,}/g, "\n\n")
+  );
+}
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_TTS_MAX_LENGTH = 1500;

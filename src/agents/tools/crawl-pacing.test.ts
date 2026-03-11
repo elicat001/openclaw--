@@ -4,7 +4,7 @@ import { createCrawlPacer } from "./crawl-pacing.js";
 
 // Use fake timers to avoid real sleeps in tests
 vi.mock("../../utils.js", async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = await importOriginal<typeof import("../../utils.js")>();
   return {
     ...actual,
     sleep: vi.fn().mockResolvedValue(undefined),

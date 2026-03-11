@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { vi } from "vitest";
-import { telegramPlugin } from "../../extensions/telegram/src/channel.js";
-import { setTelegramRuntime } from "../../extensions/telegram/src/runtime.js";
+import { feishuPlugin } from "../../extensions/feishu/src/channel.js";
+import { setFeishuRuntime } from "../../extensions/feishu/src/runtime.js";
 import * as replyModule from "../auto-reply/reply.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveMainSessionKey } from "../config/sessions.js";
@@ -81,7 +81,7 @@ export async function withTempHeartbeatSandbox<T>(
   }
 }
 
-export async function withTempTelegramHeartbeatSandbox<T>(
+export async function withTempFeishuHeartbeatSandbox<T>(
   fn: (ctx: {
     tmpDir: string;
     storePath: string;
@@ -93,14 +93,20 @@ export async function withTempTelegramHeartbeatSandbox<T>(
 ): Promise<T> {
   return withTempHeartbeatSandbox(fn, {
     prefix: options?.prefix,
-    unsetEnvVars: ["TELEGRAM_BOT_TOKEN"],
   });
 }
 
-export function setupTelegramHeartbeatPluginRuntimeForTests() {
+/** @deprecated Use withTempFeishuHeartbeatSandbox */
+export const withTempTelegramHeartbeatSandbox = withTempFeishuHeartbeatSandbox;
+
+export function setupFeishuHeartbeatPluginRuntimeForTests() {
   const runtime = createPluginRuntime();
-  setTelegramRuntime(runtime);
+  setFeishuRuntime(runtime);
   setActivePluginRegistry(
-    createTestRegistry([{ pluginId: "telegram", plugin: telegramPlugin, source: "test" }]),
+    createTestRegistry([{ pluginId: "feishu", plugin: feishuPlugin, source: "test" }]),
   );
 }
+
+/** @deprecated Use setupFeishuHeartbeatPluginRuntimeForTests */
+export const setupTelegramHeartbeatPluginRuntimeForTests =
+  setupFeishuHeartbeatPluginRuntimeForTests;

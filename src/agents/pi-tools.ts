@@ -7,14 +7,7 @@ import { getPluginToolMeta } from "../plugins/tools.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 import { resolveGatewayMessageChannel } from "../utils/message-channel.js";
 import { resolveAgentConfig } from "./agent-scope.js";
-import { createApplyPatchTool } from "./apply-patch.js";
-import {
-  createExecTool,
-  createProcessTool,
-  type ExecToolDefaults,
-  type ProcessToolDefaults,
-} from "./bash-tools.js";
-import { listChannelAgentTools } from "./channel-tools.js";
+import type { ExecToolDefaults, ProcessToolDefaults } from "./bash-tools.js";
 import { resolveImageSanitizationLimits } from "./image-sanitization.js";
 import type { ModelAuthMode } from "./model-auth.js";
 import { createOpenClawTools } from "./openclaw-tools.js";
@@ -45,6 +38,9 @@ import type { AnyAgentTool } from "./pi-tools.types.js";
 import type { SandboxContext } from "./sandbox.js";
 import { isXaiProvider } from "./schema/clean-for-xai.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
+// Ensure all built-in tool factories are registered with the default registry.
+// Each factory module self-registers on import via side-effect.
+import "./tool-factories/index.js";
 import { createToolFsPolicy, resolveToolFsConfig } from "./tool-fs-policy.js";
 import {
   applyToolPolicyPipeline,
@@ -56,6 +52,9 @@ import {
   mergeAlsoAllowPolicy,
   resolveToolProfilePolicy,
 } from "./tool-policy.js";
+import { defaultToolRegistry } from "./tool-registry.js";
+export { defaultToolRegistry, ToolRegistry } from "./tool-registry.js";
+export type { ToolCreationContext, ToolFactory } from "./tool-registry.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
 function isOpenAIProvider(provider?: string) {
@@ -390,57 +389,41 @@ export function createOpenClawCodingTools(options?: {
     }
     return [tool];
   });
-  const { cleanupMs: cleanupMsOverride, ...execDefaults } = options?.exec ?? {};
-  const execTool = createExecTool({
-    ...execDefaults,
-    host: options?.exec?.host ?? execConfig.host,
-    security: options?.exec?.security ?? execConfig.security,
-    ask: options?.exec?.ask ?? execConfig.ask,
-    node: options?.exec?.node ?? execConfig.node,
-    pathPrepend: options?.exec?.pathPrepend ?? execConfig.pathPrepend,
-    safeBins: options?.exec?.safeBins ?? execConfig.safeBins,
-    safeBinTrustedDirs: options?.exec?.safeBinTrustedDirs ?? execConfig.safeBinTrustedDirs,
-    safeBinProfiles: options?.exec?.safeBinProfiles ?? execConfig.safeBinProfiles,
+  // Build tools from the registry (bash/exec, process, apply-patch, channel tools).
+  // Pre-computed values are forwarded via underscore-prefixed keys so that
+  // individual factories don't need to duplicate config-resolution logic.
+  const registryContext = {
     agentId,
-    cwd: workspaceRoot,
-    allowBackground,
-    scopeKey,
-    sessionKey: options?.sessionKey,
-    messageProvider: options?.messageProvider,
-    currentChannelId: options?.currentChannelId,
-    currentThreadTs: options?.currentThreadTs,
-    accountId: options?.agentAccountId,
-    backgroundMs: options?.exec?.backgroundMs ?? execConfig.backgroundMs,
-    timeoutSec: options?.exec?.timeoutSec ?? execConfig.timeoutSec,
-    approvalRunningNoticeMs:
-      options?.exec?.approvalRunningNoticeMs ?? execConfig.approvalRunningNoticeMs,
-    notifyOnExit: options?.exec?.notifyOnExit ?? execConfig.notifyOnExit,
-    notifyOnExitEmptySuccess:
-      options?.exec?.notifyOnExitEmptySuccess ?? execConfig.notifyOnExitEmptySuccess,
+    workspaceRoot,
+    workspaceOnly,
     sandbox: sandbox
       ? {
           containerName: sandbox.containerName,
           workspaceDir: sandbox.workspaceDir,
           containerWorkdir: sandbox.containerWorkdir,
+          fsBridge: sandboxFsBridge,
           env: sandbox.docker.env,
+          browserBridgeUrl: sandbox.browser?.bridgeUrl,
+          browserAllowHostControl: sandbox.browserAllowHostControl,
+          workspaceAccess: sandbox.workspaceAccess,
         }
       : undefined,
-  });
-  const processTool = createProcessTool({
-    cleanupMs: cleanupMsOverride ?? execConfig.cleanupMs,
-    scopeKey,
-  });
-  const applyPatchTool =
-    !applyPatchEnabled || (sandboxRoot && !allowWorkspaceWrites)
-      ? null
-      : createApplyPatchTool({
-          cwd: sandboxRoot ?? workspaceRoot,
-          sandbox:
-            sandboxRoot && allowWorkspaceWrites
-              ? { root: sandboxRoot, bridge: sandboxFsBridge! }
-              : undefined,
-          workspaceOnly: applyPatchWorkspaceOnly,
-        });
+    options: {
+      ...options,
+      _execConfig: execConfig,
+      _scopeKey: scopeKey,
+      _allowBackground: allowBackground,
+      _sandbox: sandbox,
+      _applyPatchEnabled: applyPatchEnabled,
+      _applyPatchWorkspaceOnly: applyPatchWorkspaceOnly,
+      _sandboxRoot: sandboxRoot,
+      _sandboxFsBridge: sandboxFsBridge,
+      _allowWorkspaceWrites: allowWorkspaceWrites,
+    } as Record<string, unknown>,
+  };
+  // All built-in factories are synchronous; use the sync variant.
+  const registryTools = defaultToolRegistry.buildToolsForContextSync(registryContext);
+
   const tools: AnyAgentTool[] = [
     ...base,
     ...(sandboxRoot
@@ -467,11 +450,8 @@ export function createOpenClawCodingTools(options?: {
           ]
         : []
       : []),
-    ...(applyPatchTool ? [applyPatchTool as unknown as AnyAgentTool] : []),
-    execTool as unknown as AnyAgentTool,
-    processTool as unknown as AnyAgentTool,
-    // Channel docking: include channel-defined agent tools (login, etc.).
-    ...listChannelAgentTools({ cfg: options?.config }),
+    // Tools from the registry: exec, process, apply-patch, channel tools.
+    ...registryTools,
     ...createOpenClawTools({
       sandboxBrowserBridgeUrl: sandbox?.browser?.bridgeUrl,
       allowHostBrowserControl: sandbox ? sandbox.browserAllowHostControl : true,

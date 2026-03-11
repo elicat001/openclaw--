@@ -35,8 +35,6 @@ import {
   parseComponentsParam,
   readBooleanParam,
   resolveAttachmentMediaPolicy,
-  resolveSlackAutoThreadId,
-  resolveTelegramAutoThreadId,
 } from "./message-action-params.js";
 import type { MessagePollResult, MessageSendResult } from "./message.js";
 import {
@@ -62,7 +60,7 @@ export type MessageActionRunnerGateway = {
 
 function resolveAndApplyOutboundThreadId(
   params: Record<string, unknown>,
-  ctx: {
+  _ctx: {
     channel: ChannelId;
     to: string;
     toolContext?: ChannelThreadingToolContext;
@@ -70,21 +68,7 @@ function resolveAndApplyOutboundThreadId(
   },
 ): string | undefined {
   const threadId = readStringParam(params, "threadId");
-  const slackAutoThreadId =
-    ctx.allowSlackAutoThread && ctx.channel === "slack" && !threadId
-      ? resolveSlackAutoThreadId({ to: ctx.to, toolContext: ctx.toolContext })
-      : undefined;
-  const telegramAutoThreadId =
-    ctx.channel === "telegram" && !threadId
-      ? resolveTelegramAutoThreadId({ to: ctx.to, toolContext: ctx.toolContext })
-      : undefined;
-  const resolved = threadId ?? slackAutoThreadId ?? telegramAutoThreadId;
-  // Write auto-resolved threadId back into params so downstream dispatch
-  // (plugin `readStringParam(params, "threadId")`) picks it up.
-  if (resolved && !params.threadId) {
-    params.threadId = resolved;
-  }
-  return resolved ?? undefined;
+  return threadId ?? undefined;
 }
 
 export type RunMessageActionParams = {
@@ -175,9 +159,6 @@ function applyCrossContextMessageDecoration({
     preferComponents,
   });
   params.message = applied.message;
-  if (applied.componentsBuilder) {
-    params.components = applied.componentsBuilder;
-  }
   return applied.message;
 }
 

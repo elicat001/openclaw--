@@ -129,8 +129,14 @@ export async function enqueueDelivery(
   };
   const filePath = path.join(queueDir, `${id}.json`);
   const tmp = `${filePath}.${process.pid}.tmp`;
-  const json = JSON.stringify(entry, null, 2);
-  await fs.promises.writeFile(tmp, json, { encoding: "utf-8", mode: 0o600 });
+  const json = JSON.stringify(entry);
+  const handle = await fs.promises.open(tmp, "w", 0o600);
+  try {
+    await handle.writeFile(json, "utf-8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
   await fs.promises.rename(tmp, filePath);
   return id;
 }
@@ -172,10 +178,13 @@ export async function failDelivery(id: string, error: string, stateDir?: string)
   entry.lastAttemptAt = Date.now();
   entry.lastError = error;
   const tmp = `${filePath}.${process.pid}.tmp`;
-  await fs.promises.writeFile(tmp, JSON.stringify(entry, null, 2), {
-    encoding: "utf-8",
-    mode: 0o600,
-  });
+  const failHandle = await fs.promises.open(tmp, "w", 0o600);
+  try {
+    await failHandle.writeFile(JSON.stringify(entry), "utf-8");
+    await failHandle.sync();
+  } finally {
+    await failHandle.close();
+  }
   await fs.promises.rename(tmp, filePath);
 }
 
@@ -217,10 +226,13 @@ export async function loadPendingDeliveries(stateDir?: string): Promise<QueuedDe
       const { entry, migrated } = normalizeLegacyQueuedDeliveryEntry(parsed);
       if (migrated) {
         const tmp = `${filePath}.${process.pid}.tmp`;
-        await fs.promises.writeFile(tmp, JSON.stringify(entry, null, 2), {
-          encoding: "utf-8",
-          mode: 0o600,
-        });
+        const migrateHandle = await fs.promises.open(tmp, "w", 0o600);
+        try {
+          await migrateHandle.writeFile(JSON.stringify(entry), "utf-8");
+          await migrateHandle.sync();
+        } finally {
+          await migrateHandle.close();
+        }
         await fs.promises.rename(tmp, filePath);
       }
       entries.push(entry);

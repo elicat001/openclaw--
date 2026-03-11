@@ -32,7 +32,7 @@ function stubPythonSuccess(output: Record<string, unknown>) {
     // Call callback on next tick to simulate async
     setTimeout(() => cb(null, JSON.stringify(output), ""), 0);
     return child;
-  }) as typeof execFile);
+  }) as unknown as typeof execFile);
 }
 
 function stubPythonError(errorMessage: string) {
@@ -50,7 +50,7 @@ function stubPythonError(errorMessage: string) {
     };
     setTimeout(() => cb(new Error("exit 1"), "", errorMessage), 0);
     return child;
-  }) as typeof execFile);
+  }) as unknown as typeof execFile);
 }
 
 describe("createScraplingTool", () => {

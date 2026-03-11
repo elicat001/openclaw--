@@ -9,7 +9,6 @@ import {
 } from "openclaw/plugin-sdk/device-pair";
 import qrcode from "qrcode-terminal";
 import {
-  armPairNotifyOnce,
   formatPendingRequests,
   handleNotifyCommand,
   registerPairingNotifierService,
@@ -313,16 +312,6 @@ function formatSetupReply(payload: SetupPayload, authLabel: string): string {
   ].join("\n");
 }
 
-function formatSetupInstructions(): string {
-  return [
-    "Pairing setup code generated.",
-    "",
-    "1) Open the iOS app → Settings → Gateway",
-    "2) Paste the setup code from my next message and tap Connect",
-    "3) Back here, run /pair approve",
-  ].join("\n");
-}
-
 export default function register(api: OpenClawPluginApi) {
   registerPairingNotifierService(api);
 
@@ -416,75 +405,14 @@ export default function register(api: OpenClawPluginApi) {
 
         const channel = ctx.channel;
         const target = ctx.senderId?.trim() || ctx.from?.trim() || ctx.to?.trim() || "";
-        let autoNotifyArmed = false;
-
-        if (channel === "telegram" && target) {
-          try {
-            autoNotifyArmed = await armPairNotifyOnce({ api, ctx });
-          } catch (err) {
-            api.logger.warn?.(
-              `device-pair: failed to arm one-shot pairing notify (${String(
-                (err as Error)?.message ?? err,
-              )})`,
-            );
-          }
-        }
-
-        if (channel === "telegram" && target) {
-          try {
-            const send = api.runtime?.channel?.telegram?.sendMessageTelegram;
-            if (send) {
-              await send(
-                target,
-                ["Scan this QR code with the OpenClaw iOS app:", "", "```", qrAscii, "```"].join(
-                  "\n",
-                ),
-                {
-                  ...(ctx.messageThreadId != null ? { messageThreadId: ctx.messageThreadId } : {}),
-                  ...(ctx.accountId ? { accountId: ctx.accountId } : {}),
-                },
-              );
-              return {
-                text: [
-                  `Gateway: ${payload.url}`,
-                  `Auth: ${authLabel}`,
-                  "",
-                  autoNotifyArmed
-                    ? "After scanning, wait here for the pairing request ping."
-                    : "After scanning, come back here and run `/pair approve` to complete pairing.",
-                  ...(autoNotifyArmed
-                    ? [
-                        "I’ll auto-ping here when the pairing request arrives, then auto-disable.",
-                        "If the ping does not arrive, run `/pair approve latest` manually.",
-                      ]
-                    : []),
-                ].join("\n"),
-              };
-            }
-          } catch (err) {
-            api.logger.warn?.(
-              `device-pair: telegram QR send failed, falling back (${String(
-                (err as Error)?.message ?? err,
-              )})`,
-            );
-          }
-        }
 
         // Render based on channel capability
-        api.logger.info?.(`device-pair: QR fallback channel=${channel} target=${target}`);
+        api.logger.info?.(`device-pair: QR channel=${channel} target=${target}`);
         const infoLines = [
           `Gateway: ${payload.url}`,
           `Auth: ${authLabel}`,
           "",
-          autoNotifyArmed
-            ? "After scanning, wait here for the pairing request ping."
-            : "After scanning, run `/pair approve` to complete pairing.",
-          ...(autoNotifyArmed
-            ? [
-                "I’ll auto-ping here when the pairing request arrives, then auto-disable.",
-                "If the ping does not arrive, run `/pair approve latest` manually.",
-              ]
-            : []),
+          "After scanning, run `/pair approve` to complete pairing.",
         ];
 
         // WebUI + CLI/TUI: ASCII QR
@@ -501,45 +429,7 @@ export default function register(api: OpenClawPluginApi) {
         };
       }
 
-      const channel = ctx.channel;
-      const target = ctx.senderId?.trim() || ctx.from?.trim() || ctx.to?.trim() || "";
       const authLabel = auth.label ?? "auth";
-
-      if (channel === "telegram" && target) {
-        try {
-          const runtimeKeys = Object.keys(api.runtime ?? {});
-          const channelKeys = Object.keys(api.runtime?.channel ?? {});
-          api.logger.debug?.(
-            `device-pair: runtime keys=${runtimeKeys.join(",") || "none"} channel keys=${
-              channelKeys.join(",") || "none"
-            }`,
-          );
-          const send = api.runtime?.channel?.telegram?.sendMessageTelegram;
-          if (!send) {
-            throw new Error(
-              `telegram runtime unavailable (runtime keys: ${runtimeKeys.join(",")}; channel keys: ${channelKeys.join(
-                ",",
-              )})`,
-            );
-          }
-          await send(target, formatSetupInstructions(), {
-            ...(ctx.messageThreadId != null ? { messageThreadId: ctx.messageThreadId } : {}),
-            ...(ctx.accountId ? { accountId: ctx.accountId } : {}),
-          });
-          api.logger.info?.(
-            `device-pair: telegram split send ok target=${target} account=${ctx.accountId ?? "none"} thread=${
-              ctx.messageThreadId ?? "none"
-            }`,
-          );
-          return { text: encodeSetupCode(payload) };
-        } catch (err) {
-          api.logger.warn?.(
-            `device-pair: telegram split send failed, falling back to single message (${String(
-              (err as Error)?.message ?? err,
-            )})`,
-          );
-        }
-      }
 
       return {
         text: formatSetupReply(payload, authLabel),

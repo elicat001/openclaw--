@@ -1,10 +1,9 @@
+// ---------------------------------------------------------------------------
+// Channel adapter types and plugin core types
+// ---------------------------------------------------------------------------
+
 export { createAccountListHelpers } from "../channels/plugins/account-helpers.js";
 export { CHANNEL_MESSAGE_ACTION_NAMES } from "../channels/plugins/message-action-names.js";
-export {
-  BLUEBUBBLES_ACTIONS,
-  BLUEBUBBLES_ACTION_NAMES,
-  BLUEBUBBLES_GROUP_ACTIONS,
-} from "../channels/plugins/bluebubbles-actions.js";
 export type {
   ChannelAccountSnapshot,
   ChannelAccountState,
@@ -61,16 +60,11 @@ export type {
   BaseTokenResolution,
 } from "../channels/plugins/types.js";
 export type { ChannelConfigSchema, ChannelPlugin } from "../channels/plugins/types.plugin.js";
-export type {
-  ThreadBindingManager,
-  ThreadBindingRecord,
-  ThreadBindingTargetKind,
-} from "../discord/monitor/thread-bindings.js";
-export {
-  autoBindSpawnedDiscordSubagent,
-  listThreadBindingsBySessionKey,
-  unbindThreadBindingsBySessionKey,
-} from "../discord/monitor/thread-bindings.js";
+
+// ---------------------------------------------------------------------------
+// ACP (Agent Client Protocol) runtime
+// ---------------------------------------------------------------------------
+
 export type {
   AcpRuntimeCapabilities,
   AcpRuntimeControl,
@@ -94,6 +88,10 @@ export {
 } from "../acp/runtime/registry.js";
 export { ACP_ERROR_CODES, AcpRuntimeError } from "../acp/runtime/errors.js";
 export type { AcpRuntimeErrorCode } from "../acp/runtime/errors.js";
+// ---------------------------------------------------------------------------
+// Plugin types, runtime, and HTTP registration
+// ---------------------------------------------------------------------------
+
 export type {
   AnyAgentTool,
   OpenClawPluginConfigSchema,
@@ -125,10 +123,18 @@ export type {
 export { normalizePluginHttpPath } from "../plugins/http-path.js";
 export { registerPluginHttpRoute } from "../plugins/http-registry.js";
 export { emptyPluginConfigSchema } from "../plugins/config-schema.js";
+// ---------------------------------------------------------------------------
+// Configuration types and schemas
+// ---------------------------------------------------------------------------
+
 export type { OpenClawConfig } from "../config/config.js";
 /** @deprecated Use OpenClawConfig instead */
 export type { OpenClawConfig as ClawdbotConfig } from "../config/config.js";
 export { isDangerousNameMatchingEnabled } from "../config/dangerous-name-matching.js";
+
+// ---------------------------------------------------------------------------
+// File locking and async utilities
+// ---------------------------------------------------------------------------
 
 export type { FileLockHandle, FileLockOptions } from "./file-lock.js";
 export { acquireFileLock, withFileLock } from "./file-lock.js";
@@ -138,13 +144,13 @@ export {
   type BasicAllowlistResolutionEntry,
 } from "./allowlist-resolution.js";
 export { resolveRequestUrl } from "./request-url.js";
-export {
-  buildDiscordSendMediaOptions,
-  buildDiscordSendOptions,
-  tagDiscordChannelResult,
-} from "./discord-send.js";
 export type { KeyedAsyncQueueHooks } from "./keyed-async-queue.js";
 export { enqueueKeyedTask, KeyedAsyncQueue } from "./keyed-async-queue.js";
+
+// ---------------------------------------------------------------------------
+// Webhook infrastructure
+// ---------------------------------------------------------------------------
+
 export { normalizeWebhookPath, resolveWebhookPath } from "./webhook-path.js";
 export {
   registerWebhookTarget,
@@ -173,6 +179,11 @@ export {
   WEBHOOK_IN_FLIGHT_DEFAULTS,
 } from "./webhook-request-guards.js";
 export type { WebhookBodyReadProfile, WebhookInFlightLimiter } from "./webhook-request-guards.js";
+
+// ---------------------------------------------------------------------------
+// Channel lifecycle and status
+// ---------------------------------------------------------------------------
+
 export { keepHttpServerTaskAlive, waitUntilAbort } from "./channel-lifecycle.js";
 export type { AgentMediaPayload } from "./agent-media-payload.js";
 export { buildAgentMediaPayload } from "./agent-media-payload.js";
@@ -186,6 +197,11 @@ export {
   collectStatusIssuesFromLastError,
   createDefaultChannelRuntimeState,
 } from "./status-helpers.js";
+
+// ---------------------------------------------------------------------------
+// Channel onboarding and setup
+// ---------------------------------------------------------------------------
+
 export {
   promptSingleChannelSecretInput,
   type SingleChannelSecretInputPromptResult,
@@ -196,6 +212,11 @@ export { buildChannelSendResult } from "./channel-send-result.js";
 export type { ChannelSendRawResult } from "./channel-send-result.js";
 export { createPluginRuntimeStore } from "./runtime-store.js";
 export { createScopedChannelConfigBase } from "./channel-config-helpers.js";
+
+// ---------------------------------------------------------------------------
+// Channel config schemas and allowlist matching
+// ---------------------------------------------------------------------------
+
 export {
   AllowFromEntrySchema,
   buildCatchallMultiAccountChannelSchema,
@@ -212,16 +233,12 @@ export type {
   GroupToolPolicyBySenderConfig,
   MarkdownConfig,
   MarkdownTableMode,
-  GoogleChatAccountConfig,
-  GoogleChatConfig,
-  GoogleChatDmConfig,
-  GoogleChatGroupConfig,
-  GoogleChatActionConfig,
-  MSTeamsChannelConfig,
-  MSTeamsConfig,
-  MSTeamsReplyStyle,
-  MSTeamsTeamConfig,
 } from "../config/types.js";
+
+// ---------------------------------------------------------------------------
+// Group policy and runtime policy resolution
+// ---------------------------------------------------------------------------
+
 export {
   GROUP_POLICY_BLOCKED_LABEL,
   resetMissingProviderGroupPolicyFallbackWarningsForTesting,
@@ -235,16 +252,11 @@ export {
   type ResolveProviderRuntimeGroupPolicyParams,
   warnMissingProviderGroupPolicyFallbackOnce,
 } from "../config/runtime-group-policy.js";
-export {
-  DiscordConfigSchema,
-  GoogleChatConfigSchema,
-  IMessageConfigSchema,
-  MSTeamsConfigSchema,
-  SignalConfigSchema,
-  SlackConfigSchema,
-  TelegramConfigSchema,
-} from "../config/zod-schema.providers-core.js";
-export { WhatsAppConfigSchema } from "../config/zod-schema.providers-whatsapp.js";
+
+// ---------------------------------------------------------------------------
+// Zod config schemas (per-channel and core)
+// ---------------------------------------------------------------------------
+
 export {
   BlockStreamingCoalesceSchema,
   DmConfigSchema,
@@ -270,6 +282,10 @@ export {
 } from "../config/types.secrets.js";
 export type { SecretInput, SecretRef } from "../config/types.secrets.js";
 export { ToolPolicySchema } from "../config/zod-schema.agent-runtime.js";
+// ---------------------------------------------------------------------------
+// Runtime environment and routing
+// ---------------------------------------------------------------------------
+
 export type { RuntimeEnv } from "../runtime.js";
 export type { WizardPrompter } from "../wizard/prompts.js";
 export {
@@ -278,6 +294,11 @@ export {
   normalizeAgentId,
   resolveThreadSessionKeys,
 } from "../routing/session-key.js";
+
+// ---------------------------------------------------------------------------
+// Allowlist, access control, and authorization
+// ---------------------------------------------------------------------------
+
 export {
   formatAllowFromLowercase,
   formatNormalizedAllowFromEntries,
@@ -304,6 +325,10 @@ export {
 } from "./command-auth.js";
 export type { CommandAuthorizationRuntime } from "./command-auth.js";
 export { createScopedPairingAccess } from "./pairing-access.js";
+// ---------------------------------------------------------------------------
+// Inbound message processing and reply dispatch
+// ---------------------------------------------------------------------------
+
 export {
   createInboundEnvelopeBuilder,
   resolveInboundRouteEnvelopeBuilder,
@@ -315,8 +340,12 @@ export {
   resolveAccountWithDefaultFallback,
 } from "./account-resolution.js";
 export { issuePairingChallenge } from "../pairing/pairing-challenge.js";
-export { handleSlackMessageAction } from "./slack-message-actions.js";
 export { extractToolSend } from "./tool-send.js";
+
+// ---------------------------------------------------------------------------
+// Outbound reply and media delivery
+// ---------------------------------------------------------------------------
+
 export {
   createNormalizedOutboundDeliverer,
   formatTextWithAttachmentLinks,
@@ -336,6 +365,10 @@ export {
 export type { OutboundMediaLoadOptions } from "./outbound-media.js";
 export { loadOutboundMediaFromUrl } from "./outbound-media.js";
 export { resolveChannelAccountConfigBasePath } from "./config-paths.js";
+// ---------------------------------------------------------------------------
+// Media payload and runtime helpers
+// ---------------------------------------------------------------------------
+
 export { buildMediaPayload } from "../channels/plugins/media-payload.js";
 export type { MediaPayload, MediaPayloadInput } from "../channels/plugins/media-payload.js";
 export {
@@ -344,10 +377,20 @@ export {
   resolveRuntimeEnvWithUnavailableExit,
 } from "./runtime.js";
 export { chunkTextForOutbound } from "./text-chunking.js";
+
+// ---------------------------------------------------------------------------
+// Utility functions (params, JSON, OAuth, temp files)
+// ---------------------------------------------------------------------------
+
 export { readBooleanParam } from "./boolean-param.js";
 export { readJsonFileWithFallback, writeJsonFileAtomically } from "./json-store.js";
 export { generatePkceVerifierChallenge, toFormUrlEncoded } from "./oauth-utils.js";
 export { buildRandomTempFilePath, withTempDownloadPath } from "./temp-path.js";
+
+// ---------------------------------------------------------------------------
+// Windows spawn / process helpers
+// ---------------------------------------------------------------------------
+
 export {
   applyWindowsSpawnProgramPolicy,
   materializeWindowsSpawnProgram,
@@ -364,6 +407,11 @@ export type {
   WindowsSpawnProgram,
   WindowsSpawnResolution,
 } from "./windows-spawn.js";
+
+// ---------------------------------------------------------------------------
+// Infrastructure: paths, gateway, tailscale
+// ---------------------------------------------------------------------------
+
 export { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
 export {
   runPluginCommandWithTimeout,
@@ -377,6 +425,10 @@ export type {
   TailscaleStatusCommandResult,
   TailscaleStatusCommandRunner,
 } from "../shared/tailscale-status.js";
+// ---------------------------------------------------------------------------
+// Auto-reply, chat types, and reply tokens
+// ---------------------------------------------------------------------------
+
 export type { ChatType } from "../channels/chat-type.js";
 /** @deprecated Use ChatType instead */
 export type { RoutePeerKind } from "../routing/resolve-route.js";
@@ -390,17 +442,22 @@ export {
   formatTrimmedAllowFromEntries,
   mapAllowFromEntries,
   resolveOptionalConfigString,
-  formatWhatsAppConfigAllowFromEntries,
-  resolveIMessageConfigAllowFrom,
-  resolveIMessageConfigDefaultTo,
-  resolveWhatsAppConfigAllowFrom,
-  resolveWhatsAppConfigDefaultTo,
 } from "./channel-config-helpers.js";
+
+// ---------------------------------------------------------------------------
+// Device pairing
+// ---------------------------------------------------------------------------
+
 export {
   approveDevicePairing,
   listDevicePairing,
   rejectDevicePairing,
 } from "../infra/device-pairing.js";
+
+// ---------------------------------------------------------------------------
+// Deduplication and caching
+// ---------------------------------------------------------------------------
+
 export { createDedupeCache } from "../infra/dedupe.js";
 export type { DedupeCache } from "../infra/dedupe.js";
 export { createPersistentDedupe } from "./persistent-dedupe.js";
@@ -409,12 +466,22 @@ export type {
   PersistentDedupeCheckOptions,
   PersistentDedupeOptions,
 } from "./persistent-dedupe.js";
+
+// ---------------------------------------------------------------------------
+// Error handling, formatting, and time utilities
+// ---------------------------------------------------------------------------
+
 export { formatErrorMessage } from "../infra/errors.js";
 export {
   formatUtcTimestamp,
   formatZonedTimestamp,
   resolveTimezone,
 } from "../infra/format-time/format-datetime.js";
+
+// ---------------------------------------------------------------------------
+// HTTP body limits and webhook rate-limiting/anomaly tracking
+// ---------------------------------------------------------------------------
+
 export {
   DEFAULT_WEBHOOK_BODY_TIMEOUT_MS,
   DEFAULT_WEBHOOK_MAX_BODY_BYTES,
@@ -439,6 +506,10 @@ export type {
   WebhookAnomalyTracker,
 } from "./webhook-memory-guards.js";
 
+// ---------------------------------------------------------------------------
+// Network: SSRF guards, fetch helpers, and WebSocket utilities
+// ---------------------------------------------------------------------------
+
 export { fetchWithSsrFGuard } from "../infra/net/fetch-guard.js";
 export {
   SsrFBlockedError,
@@ -455,9 +526,18 @@ export {
 export { fetchWithBearerAuthScopeFallback } from "./fetch-auth.js";
 export type { ScopeTokenProvider } from "./fetch-auth.js";
 export { rawDataToString } from "../infra/ws.js";
+
+// ---------------------------------------------------------------------------
+// Platform detection and environment utilities
+// ---------------------------------------------------------------------------
+
 export { isWSLSync, isWSL2Sync, isWSLEnv } from "../infra/wsl.js";
 export { isTruthyEnvValue } from "../infra/env.js";
 export { resolveChannelGroupRequireMention, resolveToolsBySender } from "../config/group-policy.js";
+// ---------------------------------------------------------------------------
+// Group history and context assembly
+// ---------------------------------------------------------------------------
+
 export {
   buildPendingHistoryContextFromMap,
   clearHistoryEntries,
@@ -468,21 +548,18 @@ export {
   recordPendingHistoryEntryIfEnabled,
 } from "../auto-reply/reply/history.js";
 export type { HistoryEntry } from "../auto-reply/reply/history.js";
+
+// ---------------------------------------------------------------------------
+// Channel messaging: mentions, ack reactions, typing, logging
+// ---------------------------------------------------------------------------
+
 export { mergeAllowlist, summarizeMapping } from "../channels/allowlists/resolve-utils.js";
 export {
   resolveMentionGating,
   resolveMentionGatingWithBypass,
 } from "../channels/mention-gating.js";
-export type {
-  AckReactionGateParams,
-  AckReactionScope,
-  WhatsAppAckReactionMode,
-} from "../channels/ack-reactions.js";
-export {
-  removeAckReactionAfterReply,
-  shouldAckReaction,
-  shouldAckReactionForWhatsApp,
-} from "../channels/ack-reactions.js";
+export type { AckReactionGateParams, AckReactionScope } from "../channels/ack-reactions.js";
+export { removeAckReactionAfterReply, shouldAckReaction } from "../channels/ack-reactions.js";
 export { createTypingCallbacks } from "../channels/typing.js";
 export { createReplyPrefixContext, createReplyPrefixOptions } from "../channels/reply-prefix.js";
 export { logAckFailure, logInboundDrop, logTypingFailure } from "../channels/logging.js";
@@ -490,22 +567,11 @@ export { resolveChannelMediaMaxBytes } from "../channels/plugins/media-limits.js
 export type { NormalizedLocation } from "../channels/location.js";
 export { formatLocationText, toLocationContext } from "../channels/location.js";
 export { resolveControlCommandGate } from "../channels/command-gating.js";
-export {
-  resolveBlueBubblesGroupRequireMention,
-  resolveDiscordGroupRequireMention,
-  resolveGoogleChatGroupRequireMention,
-  resolveIMessageGroupRequireMention,
-  resolveSlackGroupRequireMention,
-  resolveTelegramGroupRequireMention,
-  resolveWhatsAppGroupRequireMention,
-  resolveBlueBubblesGroupToolPolicy,
-  resolveDiscordGroupToolPolicy,
-  resolveGoogleChatGroupToolPolicy,
-  resolveIMessageGroupToolPolicy,
-  resolveSlackGroupToolPolicy,
-  resolveTelegramGroupToolPolicy,
-  resolveWhatsAppGroupToolPolicy,
-} from "../channels/plugins/group-mentions.js";
+
+// ---------------------------------------------------------------------------
+// Channel session, config matching, and directory listing
+// ---------------------------------------------------------------------------
+
 export { recordInboundSession } from "../channels/session.js";
 export {
   buildChannelKeyCandidates,
@@ -514,23 +580,22 @@ export {
   resolveChannelEntryMatchWithFallback,
   resolveNestedAllowlistDecision,
 } from "../channels/plugins/channel-config.js";
-export {
-  listDiscordDirectoryGroupsFromConfig,
-  listDiscordDirectoryPeersFromConfig,
-  listSlackDirectoryGroupsFromConfig,
-  listSlackDirectoryPeersFromConfig,
-  listTelegramDirectoryGroupsFromConfig,
-  listTelegramDirectoryPeersFromConfig,
-  listWhatsAppDirectoryGroupsFromConfig,
-  listWhatsAppDirectoryPeersFromConfig,
-} from "../channels/plugins/directory-config.js";
 export type { AllowlistMatch } from "../channels/plugins/allowlist-match.js";
 export {
   formatAllowlistMatchMeta,
   resolveAllowlistMatchSimple,
 } from "../channels/plugins/allowlist-match.js";
+
+// ---------------------------------------------------------------------------
+// Agent tools and schema helpers
+// ---------------------------------------------------------------------------
+
 export { optionalStringEnum, stringEnum } from "../agents/schema/typebox.js";
 export type { PollInput } from "../polls.js";
+
+// ---------------------------------------------------------------------------
+// Channel config schema builders and directory helpers
+// ---------------------------------------------------------------------------
 
 export { buildChannelConfigSchema } from "../channels/plugins/config-schema.js";
 export {
@@ -548,6 +613,11 @@ export {
   applyAccountNameToChannelSection,
   migrateBaseNameToDefaultAccount,
 } from "../channels/plugins/setup-helpers.js";
+
+// ---------------------------------------------------------------------------
+// Group policy warnings
+// ---------------------------------------------------------------------------
+
 export {
   buildOpenGroupPolicyConfigureRouteAllowlistWarning,
   buildOpenGroupPolicyNoRouteAllowlistWarning,
@@ -560,6 +630,11 @@ export {
   collectOpenGroupPolicyRestrictSendersWarnings,
   collectOpenGroupPolicyRouteAllowlistWarnings,
 } from "../channels/plugins/group-policy-warnings.js";
+
+// ---------------------------------------------------------------------------
+// Pairing, security, and onboarding helpers
+// ---------------------------------------------------------------------------
+
 export {
   buildAccountScopedDmSecurityPolicy,
   formatPairingApproveHint,
@@ -581,6 +656,10 @@ export {
 } from "../channels/plugins/onboarding/helpers.js";
 export { promptChannelAccessConfig } from "../channels/plugins/onboarding/channel-access.js";
 
+// ---------------------------------------------------------------------------
+// Agent tool helpers and DM security policy
+// ---------------------------------------------------------------------------
+
 export {
   createActionGate,
   jsonResult,
@@ -599,10 +678,25 @@ export {
   resolveEffectiveAllowFromLists,
 } from "../security/dm-policy-shared.js";
 export type { DmGroupAccessReasonCode } from "../security/dm-policy-shared.js";
+
+// ---------------------------------------------------------------------------
+// Hook types
+// ---------------------------------------------------------------------------
+
 export type { HookEntry } from "../hooks/types.js";
+
+// ---------------------------------------------------------------------------
+// General-purpose utilities (string, number, parsing, ANSI)
+// ---------------------------------------------------------------------------
+
 export { clamp, escapeRegExp, normalizeE164, safeParseJson, sleep } from "../utils.js";
 export { stripAnsi } from "../terminal/ansi.js";
 export { missingTargetError } from "../infra/outbound/target-errors.js";
+
+// ---------------------------------------------------------------------------
+// Logging and diagnostics
+// ---------------------------------------------------------------------------
+
 export { registerLogTransport } from "../logging/logger.js";
 export type { LogTransport, LogTransportRecord } from "../logging/logger.js";
 export {
@@ -626,167 +720,26 @@ export type {
   DiagnosticWebhookProcessedEvent,
   DiagnosticWebhookReceivedEvent,
 } from "../infra/diagnostic-events.js";
+
+// ---------------------------------------------------------------------------
+// Media utilities (MIME, filenames, skills)
+// ---------------------------------------------------------------------------
+
 export { detectMime, extensionForMime, getFileExtension } from "../media/mime.js";
 export { extractOriginalFilename } from "../media/store.js";
 export { listSkillCommandsForAgents } from "../auto-reply/skill-commands.js";
 export type { SkillCommandSpec } from "../agents/skills.js";
 
-// Channel: Discord
-export {
-  listDiscordAccountIds,
-  resolveDefaultDiscordAccountId,
-  resolveDiscordAccount,
-  type ResolvedDiscordAccount,
-} from "../discord/accounts.js";
-export { inspectDiscordAccount } from "../discord/account-inspect.js";
-export type { InspectedDiscordAccount } from "../discord/account-inspect.js";
-export { collectDiscordAuditChannelIds } from "../discord/audit.js";
-export { discordOnboardingAdapter } from "../channels/plugins/onboarding/discord.js";
-export {
-  looksLikeDiscordTargetId,
-  normalizeDiscordMessagingTarget,
-  normalizeDiscordOutboundTarget,
-} from "../channels/plugins/normalize/discord.js";
-export { collectDiscordStatusIssues } from "../channels/plugins/status-issues/discord.js";
+// ---------------------------------------------------------------------------
+// Web media utilities
+// ---------------------------------------------------------------------------
 
-// Channel: iMessage
-export {
-  listIMessageAccountIds,
-  resolveDefaultIMessageAccountId,
-  resolveIMessageAccount,
-  type ResolvedIMessageAccount,
-} from "../imessage/accounts.js";
-export { imessageOnboardingAdapter } from "../channels/plugins/onboarding/imessage.js";
-export {
-  looksLikeIMessageTargetId,
-  normalizeIMessageMessagingTarget,
-} from "../channels/plugins/normalize/imessage.js";
-export {
-  createAllowedChatSenderMatcher,
-  parseChatAllowTargetPrefixes,
-  parseChatTargetPrefixesOrThrow,
-  resolveServicePrefixedChatTarget,
-  resolveServicePrefixedAllowTarget,
-  resolveServicePrefixedOrChatAllowTarget,
-  resolveServicePrefixedTarget,
-} from "../imessage/target-parsing-helpers.js";
-export type {
-  ChatSenderAllowParams,
-  ParsedChatTarget,
-} from "../imessage/target-parsing-helpers.js";
-
-// Channel: Slack
-export {
-  listEnabledSlackAccounts,
-  listSlackAccountIds,
-  resolveDefaultSlackAccountId,
-  resolveSlackAccount,
-  resolveSlackReplyToMode,
-  type ResolvedSlackAccount,
-} from "../slack/accounts.js";
-export { inspectSlackAccount } from "../slack/account-inspect.js";
-export type { InspectedSlackAccount } from "../slack/account-inspect.js";
-export { extractSlackToolSend, listSlackMessageActions } from "../slack/message-actions.js";
-export { slackOnboardingAdapter } from "../channels/plugins/onboarding/slack.js";
-export {
-  looksLikeSlackTargetId,
-  normalizeSlackMessagingTarget,
-} from "../channels/plugins/normalize/slack.js";
-export { buildSlackThreadingToolContext } from "../slack/threading-tool-context.js";
-
-// Channel: Telegram
-export {
-  listTelegramAccountIds,
-  resolveDefaultTelegramAccountId,
-  resolveTelegramAccount,
-  type ResolvedTelegramAccount,
-} from "../telegram/accounts.js";
-export { inspectTelegramAccount } from "../telegram/account-inspect.js";
-export type { InspectedTelegramAccount } from "../telegram/account-inspect.js";
-export { telegramOnboardingAdapter } from "../channels/plugins/onboarding/telegram.js";
-export {
-  looksLikeTelegramTargetId,
-  normalizeTelegramMessagingTarget,
-} from "../channels/plugins/normalize/telegram.js";
-export { collectTelegramStatusIssues } from "../channels/plugins/status-issues/telegram.js";
-export {
-  parseTelegramReplyToMessageId,
-  parseTelegramThreadId,
-} from "../telegram/outbound-params.js";
-export { type TelegramProbe } from "../telegram/probe.js";
-
-// Channel: Signal
-export {
-  listSignalAccountIds,
-  resolveDefaultSignalAccountId,
-  resolveSignalAccount,
-  type ResolvedSignalAccount,
-} from "../signal/accounts.js";
-export { signalOnboardingAdapter } from "../channels/plugins/onboarding/signal.js";
-export {
-  looksLikeSignalTargetId,
-  normalizeSignalMessagingTarget,
-} from "../channels/plugins/normalize/signal.js";
-
-// Channel: WhatsApp
-export {
-  listWhatsAppAccountIds,
-  resolveDefaultWhatsAppAccountId,
-  resolveWhatsAppAccount,
-  type ResolvedWhatsAppAccount,
-} from "../web/accounts.js";
-export { isWhatsAppGroupJid, normalizeWhatsAppTarget } from "../whatsapp/normalize.js";
-export { resolveWhatsAppOutboundTarget } from "../whatsapp/resolve-outbound-target.js";
-export { whatsappOnboardingAdapter } from "../channels/plugins/onboarding/whatsapp.js";
-export { resolveWhatsAppHeartbeatRecipients } from "../channels/plugins/whatsapp-heartbeat.js";
-export {
-  looksLikeWhatsAppTargetId,
-  normalizeWhatsAppAllowFromEntries,
-  normalizeWhatsAppMessagingTarget,
-} from "../channels/plugins/normalize/whatsapp.js";
-export {
-  resolveWhatsAppGroupIntroHint,
-  resolveWhatsAppMentionStripPatterns,
-} from "../channels/plugins/whatsapp-shared.js";
-export { collectWhatsAppStatusIssues } from "../channels/plugins/status-issues/whatsapp.js";
-
-// Channel: BlueBubbles
-export { collectBlueBubblesStatusIssues } from "../channels/plugins/status-issues/bluebubbles.js";
-
-// Channel: LINE
-export {
-  listLineAccountIds,
-  normalizeAccountId as normalizeLineAccountId,
-  resolveDefaultLineAccountId,
-  resolveLineAccount,
-} from "../line/accounts.js";
-export { LineConfigSchema } from "../line/config-schema.js";
-export type {
-  LineConfig,
-  LineAccountConfig,
-  ResolvedLineAccount,
-  LineChannelData,
-} from "../line/types.js";
-export {
-  createInfoCard,
-  createListCard,
-  createImageCard,
-  createActionCard,
-  createReceiptCard,
-  type CardAction,
-  type ListItem,
-} from "../line/flex-templates.js";
-export {
-  processLineMessage,
-  hasMarkdownToConvert,
-  stripMarkdown,
-} from "../line/markdown-to-line.js";
-export type { ProcessedLineMessage } from "../line/markdown-to-line.js";
-
-// Media utilities
 export { loadWebMedia, type WebMediaResult } from "../web/media.js";
 
+// ---------------------------------------------------------------------------
 // Context engine
+// ---------------------------------------------------------------------------
+
 export type {
   ContextEngine,
   ContextEngineInfo,
@@ -801,11 +754,15 @@ export type {
 export { registerContextEngine } from "../context-engine/registry.js";
 export type { ContextEngineFactory } from "../context-engine/registry.js";
 
-// Model authentication types for plugins.
-// Plugins should use runtime.modelAuth (which strips unsafe overrides like
-// agentDir/store) rather than importing raw helpers directly.
+// ---------------------------------------------------------------------------
+// Model authentication (plugins should prefer runtime.modelAuth)
+// ---------------------------------------------------------------------------
+
 export { requireApiKey } from "../agents/model-auth.js";
 export type { ResolvedProviderAuth } from "../agents/model-auth.js";
 
+// ---------------------------------------------------------------------------
 // Security utilities
+// ---------------------------------------------------------------------------
+
 export { redactSensitiveText } from "../logging/redact.js";

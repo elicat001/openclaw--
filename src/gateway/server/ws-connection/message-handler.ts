@@ -1063,6 +1063,7 @@ export function attachGatewayWsMessageHandler(params: {
           canvasHostUrl,
           canvasCapability,
           canvasCapabilityExpiresAtMs,
+          lastAuthAt: Date.now(),
         };
         setClient(nextClient);
         setHandshakeState("connected");

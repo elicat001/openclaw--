@@ -8,7 +8,6 @@ import {
 } from "../../agents/model-selection.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions.js";
-import { buildBrowseProvidersButton } from "../../telegram/model-buttons.js";
 import { shortenHomePath } from "../../utils.js";
 import { resolveSelectedAndActiveModel } from "../model-runtime.js";
 import type { ReplyPayload } from "../types.js";
@@ -242,27 +241,9 @@ export async function maybeHandleModelDirectiveInfo(params: {
       sessionEntry: params.sessionEntry,
     });
     const current = modelRefs.selected.label;
-    const isTelegram = params.surface === "telegram";
     const activeRuntimeLine = modelRefs.activeDiffers
       ? `Active: ${modelRefs.active.label} (runtime)`
       : null;
-
-    if (isTelegram) {
-      const buttons = buildBrowseProvidersButton();
-      return {
-        text: [
-          `Current: ${current}${modelRefs.activeDiffers ? " (selected)" : ""}`,
-          activeRuntimeLine,
-          "",
-          "Tap below to browse models, or use:",
-          "/model <provider/model> to switch",
-          "/model status for details",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        channelData: { telegram: { buttons } },
-      };
-    }
 
     return {
       text: [

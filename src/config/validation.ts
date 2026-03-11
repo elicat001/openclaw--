@@ -398,10 +398,10 @@ function validateConfigObjectWithPluginsBase(
         }
       }
       if (!allowedChannels.has(trimmed)) {
-        issues.push({
-          path: `channels.${trimmed}`,
-          message: `unknown channel id: ${trimmed}`,
-        });
+        // Gracefully skip unknown channel IDs (e.g. from previously removed channels)
+        // instead of failing config validation. The channel config section will simply
+        // be ignored at runtime.
+        continue;
       }
     }
   }
@@ -441,7 +441,8 @@ function validateConfigObjectWithPluginsBase(
     if (heartbeatChannelIds.has(normalized)) {
       return;
     }
-    issues.push({ path, message: `unknown heartbeat target: ${target}` });
+    // Gracefully skip unknown heartbeat targets (e.g. removed channels)
+    return;
   };
 
   validateHeartbeatTarget(

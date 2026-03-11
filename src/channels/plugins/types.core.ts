@@ -5,10 +5,9 @@ import type { OpenClawConfig } from "../../config/config.js";
 import type { PollInput } from "../../polls.js";
 import type { GatewayClientMode, GatewayClientName } from "../../utils/message-channel.js";
 import type { ChatType } from "../chat-type.js";
-import type { ChatChannelId } from "../registry.js";
 import type { ChannelMessageActionName as ChannelMessageActionNameFromList } from "./message-action-names.js";
 
-export type ChannelId = ChatChannelId | (string & {});
+export type ChannelId = string & {};
 
 export type ChannelOutboundTargetMode = "explicit" | "implicit" | "heartbeat";
 

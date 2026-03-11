@@ -13,13 +13,13 @@ import type { CanvasHostHandler } from "../canvas-host/server.js";
 import { loadConfig } from "../config/config.js";
 import type { createSubsystemLogger } from "../logging/subsystem.js";
 import { safeEqualSecret } from "../security/secret-equal.js";
-import { handleSlackHttpRequest } from "../slack/http/index.js";
 import { handleAdminApiRequest } from "./admin-api.js";
 import {
   AUTH_RATE_LIMIT_SCOPE_HOOK_AUTH,
   createAuthRateLimiter,
   normalizeRateLimitClientIp,
   type AuthRateLimiter,
+  type RateLimitCheckResult,
 } from "./auth-rate-limit.js";
 import {
   authorizeHttpGatewayConnect,
@@ -55,6 +55,11 @@ import { sendGatewayAuthFailure, setDefaultSecurityHeaders } from "./http-common
 import { getBearerToken } from "./http-utils.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
+import {
+  MAX_WEBHOOK_PAYLOAD_BYTES,
+  WEBHOOK_RATE_LIMIT_MAX,
+  WEBHOOK_RATE_LIMIT_WINDOW_MS,
+} from "./server-constants.js";
 import {
   authorizeCanvasRequest,
   enforcePluginRouteGatewayAuth,
@@ -364,9 +369,59 @@ export function createHooksRequestHandler(
     pruneIntervalMs: 0,
   });
 
+  // Per-source rate limiter for all webhook requests (applied before auth).
+  const webhookRateLimiter = createAuthRateLimiter({
+    maxAttempts: WEBHOOK_RATE_LIMIT_MAX,
+    windowMs: WEBHOOK_RATE_LIMIT_WINDOW_MS,
+    lockoutMs: WEBHOOK_RATE_LIMIT_WINDOW_MS,
+    exemptLoopback: false,
+    pruneIntervalMs: 0,
+  });
+
   const resolveHookClientKey = (req: IncomingMessage): string => {
     return normalizeRateLimitClientIp(req.socket?.remoteAddress);
   };
+
+  /** Check Content-Length against the webhook payload limit before consuming the body. */
+  function checkPayloadSize(req: IncomingMessage, res: ServerResponse): boolean {
+    const contentLength = req.headers["content-length"];
+    if (contentLength !== undefined) {
+      const parsed = Number(contentLength);
+      if (Number.isFinite(parsed) && parsed > MAX_WEBHOOK_PAYLOAD_BYTES) {
+        res.statusCode = 413;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: `Payload Too Large: limit is ${MAX_WEBHOOK_PAYLOAD_BYTES} bytes`,
+          }),
+        );
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Apply per-source webhook rate limiting. Returns true if request is allowed. */
+  function checkWebhookRateLimit(clientKey: string, res: ServerResponse): boolean {
+    const WEBHOOK_RATE_LIMIT_SCOPE = "webhook";
+    const result: RateLimitCheckResult = webhookRateLimiter.check(
+      clientKey,
+      WEBHOOK_RATE_LIMIT_SCOPE,
+    );
+    if (!result.allowed) {
+      const retryAfter = result.retryAfterMs > 0 ? Math.ceil(result.retryAfterMs / 1000) : 1;
+      res.statusCode = 429;
+      res.setHeader("Retry-After", String(retryAfter));
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end("Too Many Requests");
+      logHooks.warn(`webhook rate limited for ${clientKey}; retry-after=${retryAfter}s`);
+      return false;
+    }
+    // Record every request as a "failure" to count towards the sliding window.
+    webhookRateLimiter.recordFailure(clientKey, WEBHOOK_RATE_LIMIT_SCOPE);
+    return true;
+  }
 
   return async (req, res) => {
     const hooksConfig = getHooksConfig();
@@ -398,8 +453,19 @@ export function createHooksRequestHandler(
       return true;
     }
 
-    const token = extractHookToken(req);
     const clientKey = resolveHookClientKey(req);
+
+    // Per-source rate limiting — applied before auth to avoid wasting resources.
+    if (!checkWebhookRateLimit(clientKey, res)) {
+      return true;
+    }
+
+    // Payload size pre-check via Content-Length header before reading the body.
+    if (!checkPayloadSize(req, res)) {
+      return true;
+    }
+
+    const token = extractHookToken(req);
     if (!safeEqualSecret(token, hooksConfig.token)) {
       const throttle = hookAuthLimiter.check(clientKey, AUTH_RATE_LIMIT_SCOPE_HOOK_AUTH);
       if (!throttle.allowed) {
@@ -655,10 +721,6 @@ export function createGatewayHttpServer(opts: {
               allowRealIpFallback,
               rateLimiter,
             }),
-        },
-        {
-          name: "slack",
-          run: () => handleSlackHttpRequest(req, res),
         },
       ];
       if (openResponsesEnabled) {

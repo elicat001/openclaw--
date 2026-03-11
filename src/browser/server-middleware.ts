@@ -32,6 +32,10 @@ export function installBrowserAuthMiddleware(
     if (isAuthorizedBrowserRequest(req, auth)) {
       return next();
     }
+    // Send WWW-Authenticate so browsers prompt for credentials (Basic Auth).
+    if (auth.password) {
+      res.setHeader("WWW-Authenticate", 'Basic realm="OpenClaw Browser Control"');
+    }
     res.status(401).send("Unauthorized");
   });
 }

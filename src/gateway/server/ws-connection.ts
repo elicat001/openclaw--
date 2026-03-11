@@ -90,7 +90,16 @@ export type AttachGatewayWsConnectionHandlerParams = GatewayWsSharedHandlerParam
   buildRequestContext: () => GatewayRequestContext;
 };
 
-export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnectionHandlerParams) {
+/** Default session re-auth interval: 30 minutes. */
+const SESSION_REAUTH_MAX_AGE_MS = 30 * 60 * 1000;
+
+/** How often to check for expired sessions (60 seconds). */
+const SESSION_REAUTH_CHECK_INTERVAL_MS = 60_000;
+
+export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnectionHandlerParams): {
+  /** Stop the session re-auth timer. Call on server shutdown. */
+  stopSessionReauthTimer: () => void;
+} {
   const {
     wss,
     clients,
@@ -315,4 +324,38 @@ export function attachGatewayWsConnectionHandler(params: AttachGatewayWsConnecti
       logWsControl,
     });
   });
+
+  // Periodic session re-auth check: close connections that have not
+  // re-authenticated within the allowed window.  The client is expected to
+  // reconnect and re-authenticate upon receiving the `session_expired` event.
+  const sessionReauthTimer = setInterval(() => {
+    const now = Date.now();
+    for (const c of clients) {
+      const authAge = now - (c.lastAuthAt ?? 0);
+      if (authAge > SESSION_REAUTH_MAX_AGE_MS) {
+        logWsControl.info(`session expired conn=${c.connId} authAgeMs=${authAge}`);
+        try {
+          c.socket.send(
+            JSON.stringify({
+              type: "event",
+              event: "session_expired",
+              payload: { reason: "session_max_age_exceeded", maxAgeMs: SESSION_REAUTH_MAX_AGE_MS },
+            }),
+          );
+        } catch {
+          // Socket may already be closing; ignore send errors.
+        }
+        try {
+          c.socket.close(4401, "session expired");
+        } catch {
+          // best-effort
+        }
+        clients.delete(c);
+      }
+    }
+  }, SESSION_REAUTH_CHECK_INTERVAL_MS);
+
+  return {
+    stopSessionReauthTimer: () => clearInterval(sessionReauthTimer),
+  };
 }

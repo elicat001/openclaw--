@@ -223,28 +223,11 @@ async function notifySubscriber(params: {
   subscriber: NotifySubscription;
   text: string;
 }): Promise<boolean> {
-  const send = params.api.runtime?.channel?.telegram?.sendMessageTelegram;
-  if (!send) {
-    params.api.logger.warn("device-pair: telegram runtime unavailable for pairing notifications");
-    return false;
-  }
-
-  try {
-    await send(params.subscriber.to, params.text, {
-      ...(params.subscriber.accountId ? { accountId: params.subscriber.accountId } : {}),
-      ...(params.subscriber.messageThreadId != null
-        ? { messageThreadId: params.subscriber.messageThreadId }
-        : {}),
-    });
-    return true;
-  } catch (err) {
-    params.api.logger.warn(
-      `device-pair: failed to send pairing notification to ${params.subscriber.to}: ${String(
-        (err as Error)?.message ?? err,
-      )}`,
-    );
-    return false;
-  }
+  // Pairing notifications are not currently supported (Telegram channel was removed).
+  params.api.logger.warn(
+    "device-pair: pairing notification delivery not available (no supported channel)",
+  );
+  return false;
 }
 
 async function notifyPendingPairingRequests(params: {
@@ -321,27 +304,8 @@ export async function armPairNotifyOnce(params: {
     messageThreadId?: number;
   };
 }): Promise<boolean> {
-  if (params.ctx.channel !== "telegram") {
-    return false;
-  }
-  const target = resolveNotifyTarget(params.ctx);
-  if (!target) {
-    return false;
-  }
-
-  const stateDir = params.api.runtime.state.resolveStateDir();
-  const statePath = resolveNotifyStatePath(stateDir);
-  const state = await readNotifyState(statePath);
-  let changed = false;
-
-  if (upsertNotifySubscriber(state.subscribers, target, "once")) {
-    changed = true;
-  }
-
-  if (changed) {
-    await writeNotifyState(statePath, state);
-  }
-  return true;
+  // Pairing notification arming not currently supported (Telegram channel was removed).
+  return false;
 }
 
 export async function handleNotifyCommand(params: {
@@ -356,72 +320,8 @@ export async function handleNotifyCommand(params: {
   };
   action: string;
 }): Promise<{ text: string }> {
-  if (params.ctx.channel !== "telegram") {
-    return { text: "Pairing notifications are currently supported only on Telegram." };
-  }
-
-  const target = resolveNotifyTarget(params.ctx);
-  if (!target) {
-    return { text: "Could not resolve Telegram target for this chat." };
-  }
-
-  const stateDir = params.api.runtime.state.resolveStateDir();
-  const statePath = resolveNotifyStatePath(stateDir);
-  const state = await readNotifyState(statePath);
-  const targetKey = notifySubscriberKey(target);
-  const current = state.subscribers.find((entry) => notifySubscriberKey(entry) === targetKey);
-
-  if (params.action === "on" || params.action === "enable") {
-    if (upsertNotifySubscriber(state.subscribers, target, "persistent")) {
-      await writeNotifyState(statePath, state);
-    }
-    return {
-      text:
-        "✅ Pair request notifications enabled for this Telegram chat.\n" +
-        "I will ping here when a new device pairing request arrives.",
-    };
-  }
-
-  if (params.action === "off" || params.action === "disable") {
-    const currentIndex = state.subscribers.findIndex(
-      (entry) => notifySubscriberKey(entry) === targetKey,
-    );
-    if (currentIndex !== -1) {
-      state.subscribers.splice(currentIndex, 1);
-      await writeNotifyState(statePath, state);
-    }
-    return { text: "✅ Pair request notifications disabled for this Telegram chat." };
-  }
-
-  if (params.action === "once" || params.action === "arm") {
-    await armPairNotifyOnce({
-      api: params.api,
-      ctx: params.ctx,
-    });
-    return {
-      text:
-        "✅ One-shot pairing notification armed for this Telegram chat.\n" +
-        "I will notify on the next new pairing request, then auto-disable.",
-    };
-  }
-
-  if (params.action === "status" || params.action === "") {
-    const pending = await listDevicePairing();
-    const enabled = Boolean(current);
-    const mode = current?.mode ?? "off";
-    return {
-      text: [
-        `Pair request notifications: ${enabled ? "enabled" : "disabled"} for this chat.`,
-        `Mode: ${mode}`,
-        `Subscribers: ${state.subscribers.length}`,
-        `Pending requests: ${pending.pending.length}`,
-        "",
-        "Use /pair notify on|off|once",
-      ].join("\n"),
-    };
-  }
-
-  return { text: "Usage: /pair notify on|off|once|status" };
+  // Pairing notifications are not currently supported (Telegram channel was removed).
+  return { text: "Pairing notifications are not currently available." };
 }
 
 export function registerPairingNotifierService(api: OpenClawPluginApi): void {

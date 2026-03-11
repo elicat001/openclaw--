@@ -54,15 +54,21 @@ const whatsappOutbound: ChannelOutboundAdapter = {
     if (!deps?.sendWhatsApp) {
       throw new Error("Missing sendWhatsApp dep");
     }
-    return { channel: "whatsapp", ...(await deps.sendWhatsApp(to, text, { verbose: false })) };
+    const send = deps.sendWhatsApp as (
+      ...a: unknown[]
+    ) => Promise<{ messageId: string; toJid: string }>;
+    return { channel: "whatsapp", ...(await send(to, text, { verbose: false })) };
   },
   sendMedia: async ({ deps, to, text, mediaUrl }) => {
     if (!deps?.sendWhatsApp) {
       throw new Error("Missing sendWhatsApp dep");
     }
+    const send = deps.sendWhatsApp as (
+      ...a: unknown[]
+    ) => Promise<{ messageId: string; toJid: string }>;
     return {
       channel: "whatsapp",
-      ...(await deps.sendWhatsApp(to, text, { verbose: false, mediaUrl })),
+      ...(await send(to, text, { verbose: false, mediaUrl })),
     };
   },
 };
@@ -431,8 +437,8 @@ describe("gateway server misc", () => {
       JSON.stringify(
         {
           channels: {
-            discord: {
-              token: "token-123",
+            whatsapp: {
+              enabled: true,
             },
           },
         },
@@ -448,9 +454,8 @@ describe("gateway server misc", () => {
 
     const updated = JSON.parse(await fs.readFile(configPath, "utf-8")) as Record<string, unknown>;
     const channels = updated.channels as Record<string, unknown> | undefined;
-    const discord = channels?.discord as Record<string, unknown> | undefined;
-    expect(discord).toMatchObject({
-      token: "token-123",
+    const whatsapp = channels?.whatsapp as Record<string, unknown> | undefined;
+    expect(whatsapp).toMatchObject({
       enabled: true,
     });
   });

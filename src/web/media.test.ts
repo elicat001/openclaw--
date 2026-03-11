@@ -4,7 +4,6 @@ import path from "node:path";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { resolveStateDir } from "../config/paths.js";
-import { sendVoiceMessageDiscord } from "../discord/send.js";
 import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
 import { optimizeImageToPng } from "../media/image-ops.js";
 import { mockPinnedHostnameResolution } from "../test-helpers/ssrf.js";
@@ -343,35 +342,6 @@ describe("web media loading", () => {
     expect(result.kind).toBe("image");
     expect(result.contentType).toBe("image/jpeg");
     expect(result.buffer.length).toBeLessThanOrEqual(fallbackPngCap);
-  });
-});
-
-describe("Discord voice message input hardening", () => {
-  it("rejects unsafe voice message inputs", async () => {
-    const cases = [
-      {
-        name: "local path outside allowed media roots",
-        candidate: path.join(process.cwd(), "package.json"),
-        expectedMessage: /Local media path is not under an allowed directory/i,
-      },
-      {
-        name: "private-network URL",
-        candidate: "http://127.0.0.1/voice.ogg",
-        expectedMessage: /Failed to fetch media|Blocked|private|internal/i,
-      },
-      {
-        name: "non-http URL scheme",
-        candidate: "rtsp://example.com/voice.ogg",
-        expectedMessage: /Local media path is not under an allowed directory|ENOENT|no such file/i,
-      },
-    ] as const;
-
-    for (const testCase of cases) {
-      await expect(
-        sendVoiceMessageDiscord("channel:123", testCase.candidate),
-        testCase.name,
-      ).rejects.toThrow(testCase.expectedMessage);
-    }
   });
 });
 

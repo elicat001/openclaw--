@@ -1,8 +1,12 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJiti } from "jiti";
+import type { Jiti } from "jiti";
 import type { OpenClawConfig } from "../config/config.js";
+import { resolveStateDir } from "../config/paths.js";
 import type { GatewayRequestHandler } from "../gateway/server-methods/types.js";
 import { openBoundaryFileSync } from "../infra/boundary-file-read.js";
 import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
@@ -163,6 +167,94 @@ export const __testing = {
   resolvePluginSdkAliasCandidateOrder,
   resolvePluginSdkAliasFile,
 };
+
+// ---------------------------------------------------------------------------
+// Plugin compilation cache
+// ---------------------------------------------------------------------------
+
+const PLUGIN_CACHE_DIR = path.join(resolveStateDir(), "plugin-cache");
+
+let pluginCacheDirEnsured = false;
+
+function ensurePluginCacheDir(): void {
+  if (pluginCacheDirEnsured) {
+    return;
+  }
+  try {
+    fs.mkdirSync(PLUGIN_CACHE_DIR, { recursive: true });
+    pluginCacheDirEnsured = true;
+  } catch {
+    // Best-effort; caching will be skipped if dir cannot be created.
+  }
+}
+
+/**
+ * Build a deterministic cache file path for a given plugin source path.
+ * The key incorporates the absolute path so collisions are avoided.
+ */
+function pluginCachePath(pluginSource: string): string {
+  const hash = createHash("sha256").update(pluginSource).digest("hex").slice(0, 16);
+  return path.join(PLUGIN_CACHE_DIR, `${hash}.cjs`);
+}
+
+/**
+ * Check whether a cached compiled file is still valid by comparing mtimes.
+ * Returns `true` when the cache file exists and is newer than the source file.
+ */
+function isPluginCacheValid(pluginSource: string, cachePath: string): boolean {
+  try {
+    const srcStat = fs.statSync(pluginSource);
+    const cacheStat = fs.statSync(cachePath);
+    return cacheStat.mtimeMs > srcStat.mtimeMs;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Load a plugin module through a file-system compilation cache.
+ *
+ * On cache hit (source mtime < cache mtime), the pre-compiled file is loaded
+ * directly via `require`, bypassing jiti's transform step.
+ *
+ * On cache miss, jiti compiles the source as usual and we additionally persist
+ * the compiled output to disk using jiti's `transform` API so subsequent
+ * startups can skip compilation for unchanged plugins.
+ */
+function loadPluginWithCache(pluginSource: string, jiti: Jiti, logger: PluginLogger): unknown {
+  const cachePath = pluginCachePath(pluginSource);
+
+  // Cache hit: load the pre-compiled file directly.
+  if (isPluginCacheValid(pluginSource, cachePath)) {
+    try {
+      const esmRequire = createRequire(import.meta.url);
+      return esmRequire(cachePath);
+    } catch {
+      // Corrupted cache — fall through to recompile.
+      logger.debug?.(`[plugins] cache load failed for ${pluginSource}, recompiling`);
+    }
+  }
+
+  // Cache miss (or corrupted): compile via jiti.
+  const mod = jiti(pluginSource);
+
+  // Attempt to persist the compiled output for next startup.
+  try {
+    ensurePluginCacheDir();
+    const source = fs.readFileSync(pluginSource, "utf-8");
+    const transformed = jiti.transform({ source, filename: pluginSource, ts: true });
+    const code =
+      typeof transformed === "string"
+        ? transformed
+        : ((transformed as { code?: string }).code ?? String(transformed));
+    fs.writeFileSync(cachePath, code, "utf-8");
+  } catch {
+    // Non-fatal: caching failure should never break plugin loading.
+    logger.debug?.(`[plugins] failed to write compilation cache for ${pluginSource}`);
+  }
+
+  return mod;
+}
 
 function buildCacheKey(params: {
   workspaceDir?: string;
@@ -545,8 +637,10 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
       ...(pluginSdkAlias ? { "openclaw/plugin-sdk": pluginSdkAlias } : {}),
       ...resolvePluginSdkScopedAliasMap(),
     };
+    ensurePluginCacheDir();
     jitiLoader = createJiti(import.meta.url, {
       interopDefault: true,
+      fsCache: PLUGIN_CACHE_DIR,
       extensions: [".ts", ".tsx", ".mts", ".cts", ".mtsx", ".ctsx", ".js", ".mjs", ".cjs", ".json"],
       ...(Object.keys(aliasMap).length > 0
         ? {
@@ -674,7 +768,7 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
 
     let mod: OpenClawPluginModule | null = null;
     try {
-      mod = getJiti()(safeSource) as OpenClawPluginModule;
+      mod = loadPluginWithCache(safeSource, getJiti(), logger) as OpenClawPluginModule;
     } catch (err) {
       recordPluginError({
         logger,

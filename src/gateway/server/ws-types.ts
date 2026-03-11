@@ -10,4 +10,6 @@ export type GatewayWsClient = {
   canvasHostUrl?: string;
   canvasCapability?: string;
   canvasCapabilityExpiresAtMs?: number;
+  /** Timestamp (ms) of the most recent successful authentication. */
+  lastAuthAt?: number;
 };

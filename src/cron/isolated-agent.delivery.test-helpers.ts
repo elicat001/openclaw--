@@ -6,12 +6,7 @@ import { makeCfg, makeJob } from "./isolated-agent.test-harness.js";
 
 export function createCliDeps(overrides: Partial<CliDeps> = {}): CliDeps {
   return {
-    sendMessageSlack: vi.fn(),
     sendMessageWhatsApp: vi.fn(),
-    sendMessageTelegram: vi.fn(),
-    sendMessageDiscord: vi.fn(),
-    sendMessageSignal: vi.fn(),
-    sendMessageIMessage: vi.fn(),
     ...overrides,
   };
 }
@@ -30,21 +25,16 @@ export function mockAgentPayloads(
   });
 }
 
-export function expectDirectTelegramDelivery(
-  deps: CliDeps,
-  params: { chatId: string; text: string; messageThreadId?: number },
-) {
-  expect(deps.sendMessageTelegram).toHaveBeenCalledTimes(1);
-  expect(deps.sendMessageTelegram).toHaveBeenCalledWith(
-    params.chatId,
+export function expectDirectWhatsAppDelivery(deps: CliDeps, params: { to: string; text: string }) {
+  expect(deps.sendMessageWhatsApp).toHaveBeenCalledTimes(1);
+  expect(deps.sendMessageWhatsApp).toHaveBeenCalledWith(
+    params.to,
     params.text,
-    expect.objectContaining(
-      params.messageThreadId === undefined ? {} : { messageThreadId: params.messageThreadId },
-    ),
+    expect.objectContaining({}),
   );
 }
 
-export async function runTelegramAnnounceTurn(params: {
+export async function runWhatsAppAnnounceTurn(params: {
   home: string;
   storePath: string;
   deps: CliDeps;
@@ -58,7 +48,7 @@ export async function runTelegramAnnounceTurn(params: {
 }): Promise<Awaited<ReturnType<typeof runCronIsolatedAgentTurn>>> {
   return runCronIsolatedAgentTurn({
     cfg: makeCfg(params.home, params.storePath, {
-      channels: { telegram: { botToken: "t-1" } },
+      channels: { whatsapp: {} },
     }),
     deps: params.deps,
     job: {

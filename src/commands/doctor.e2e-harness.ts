@@ -134,15 +134,6 @@ function createLegacyStateMigrationDetectionResult(params?: {
       targetDir: "/tmp/state/agents/main/agent",
       hasLegacy: false,
     },
-    whatsappAuth: {
-      legacyDir: "/tmp/oauth",
-      targetDir: "/tmp/oauth/whatsapp/default",
-      hasLegacy: false,
-    },
-    pairingAllowFrom: {
-      hasLegacyTelegram: false,
-      copyPlans: [],
-    },
     preview: params?.preview ?? [],
   };
 }
@@ -256,10 +247,6 @@ vi.mock("../daemon/service.js", () => ({
 vi.mock("../pairing/pairing-store.js", () => ({
   readChannelAllowFromStore: vi.fn().mockResolvedValue([]),
   upsertChannelPairingRequest: vi.fn().mockResolvedValue({ code: "000000", created: false }),
-}));
-
-vi.mock("../telegram/token.js", () => ({
-  resolveTelegramToken: vi.fn(() => ({ token: "", source: "none" })),
 }));
 
 vi.mock("../runtime.js", () => ({

@@ -1,4 +1,4 @@
-export type { ChannelMessageActionName } from "../channels/plugins/types.js";
+export type { ChannelMessageActionName, ChannelMeta } from "../channels/plugins/types.js";
 export type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 export type { OpenClawConfig } from "../config/config.js";
 export type { ResolvedWhatsAppAccount } from "../web/accounts.js";
@@ -16,7 +16,6 @@ export {
 export { buildChannelConfigSchema } from "../channels/plugins/config-schema.js";
 export { formatPairingApproveHint } from "../channels/plugins/helpers.js";
 
-export { getChatChannelMeta } from "../channels/registry.js";
 export {
   listWhatsAppAccountIds,
   resolveDefaultWhatsAppAccountId,

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createDeviceTokenReplayGuard } from "../../../infra/device-token-replay-guard.js";
 import type { AuthRateLimiter } from "../../auth-rate-limit.js";
 import { resolveConnectAuthDecision, type ConnectAuthState } from "./auth-context.js";
 
@@ -49,6 +50,7 @@ async function resolveDeviceTokenDecision(params: {
     role: "operator",
     scopes: ["operator.read"],
     verifyDeviceToken: params.verifyDeviceToken,
+    replayGuard: createDeviceTokenReplayGuard(),
     ...(params.rateLimiter ? { rateLimiter: params.rateLimiter } : {}),
     ...(params.clientIp ? { clientIp: params.clientIp } : {}),
   });
@@ -64,6 +66,7 @@ describe("resolveConnectAuthDecision", () => {
       role: "operator",
       scopes: ["operator.read"],
       verifyDeviceToken,
+      replayGuard: createDeviceTokenReplayGuard(),
     });
     expect(decision.authOk).toBe(false);
     expect(decision.authResult.reason).toBe("token_mismatch");
@@ -81,6 +84,7 @@ describe("resolveConnectAuthDecision", () => {
       role: "operator",
       scopes: ["operator.read"],
       verifyDeviceToken,
+      replayGuard: createDeviceTokenReplayGuard(),
     });
     expect(decision.authOk).toBe(false);
     expect(decision.authResult.reason).toBe("device_token_mismatch");
@@ -126,6 +130,7 @@ describe("resolveConnectAuthDecision", () => {
       role: "operator",
       scopes: [],
       verifyDeviceToken,
+      replayGuard: createDeviceTokenReplayGuard(),
     });
     expect(decision.authOk).toBe(true);
     expect(decision.authMethod).toBe("token");
