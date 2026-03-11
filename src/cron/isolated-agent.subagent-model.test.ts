@@ -55,9 +55,7 @@ function makeCfg(
 }
 
 function makeDeps(): CliDeps {
-  return {
-    sendMessageWhatsApp: vi.fn(),
-  };
+  return {} as CliDeps;
 }
 
 function makeJob(): CronJob {

@@ -10,7 +10,6 @@ import type {
   SignalStatus,
   SlackStatus,
   TelegramStatus,
-  WhatsAppStatus,
 } from "../types.ts";
 import type { NostrProfileFormState } from "./channels.nostr-profile-form.ts";
 
@@ -22,10 +21,6 @@ export type ChannelsProps = {
   snapshot: ChannelsStatusSnapshot | null;
   lastError: string | null;
   lastSuccessAt: number | null;
-  whatsappMessage: string | null;
-  whatsappQrDataUrl: string | null;
-  whatsappConnected: boolean | null;
-  whatsappBusy: boolean;
   configSchema: unknown;
   configSchemaLoading: boolean;
   configForm: Record<string, unknown> | null;
@@ -35,9 +30,6 @@ export type ChannelsProps = {
   nostrProfileFormState: NostrProfileFormState | null;
   nostrProfileAccountId: string | null;
   onRefresh: (probe: boolean) => void;
-  onWhatsAppStart: (force: boolean) => void;
-  onWhatsAppWait: () => void;
-  onWhatsAppLogout: () => void;
   onConfigPatch: (path: Array<string | number>, value: unknown) => void;
   onConfigSave: () => void;
   onConfigReload: () => void;
@@ -50,7 +42,6 @@ export type ChannelsProps = {
 };
 
 export type ChannelsChannelData = {
-  whatsapp?: WhatsAppStatus;
   telegram?: TelegramStatus;
   discord?: DiscordStatus | null;
   googlechat?: GoogleChatStatus | null;

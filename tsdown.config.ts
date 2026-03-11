@@ -44,7 +44,6 @@ const pluginSdkEntrypoints = [
   "index",
   "core",
   "compat",
-  "whatsapp",
   "acpx",
   "copilot-proxy",
   "device-pair",
@@ -78,13 +77,6 @@ export default defineConfig([
   }),
   nodeBuildConfig({
     entry: "src/infra/warning-filter.ts",
-  }),
-  nodeBuildConfig({
-    // Keep sync lazy-runtime channel modules as concrete dist files.
-    entry: {
-      "channels/plugins/agent-tools/whatsapp-login":
-        "src/channels/plugins/agent-tools/whatsapp-login.ts",
-    },
   }),
   ...pluginSdkEntrypoints.map((entry) =>
     nodeBuildConfig({

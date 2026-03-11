@@ -16,9 +16,7 @@ import {
 import type { CronJob } from "./types.js";
 
 function makeDeps(): CliDeps {
-  return {
-    sendMessageWhatsApp: vi.fn(),
-  };
+  return {} as CliDeps;
 }
 
 function mockEmbeddedPayloads(payloads: Array<{ text?: string; isError?: boolean }>) {

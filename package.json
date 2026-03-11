@@ -48,10 +48,6 @@
       "types": "./dist/plugin-sdk/compat.d.ts",
       "default": "./dist/plugin-sdk/compat.js"
     },
-    "./plugin-sdk/whatsapp": {
-      "types": "./dist/plugin-sdk/whatsapp.d.ts",
-      "default": "./dist/plugin-sdk/whatsapp.js"
-    },
     "./plugin-sdk/acpx": {
       "types": "./dist/plugin-sdk/acpx.d.ts",
       "default": "./dist/plugin-sdk/acpx.js"

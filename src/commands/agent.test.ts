@@ -9,6 +9,7 @@ import { loadModelCatalog } from "../agents/model-catalog.js";
 import * as modelSelectionModule from "../agents/model-selection.js";
 import { runEmbeddedPiAgent } from "../agents/pi-embedded.js";
 import * as commandSecretGatewayModule from "../cli/command-secret-gateway.js";
+import type { CliDeps } from "../cli/deps.js";
 import type { OpenClawConfig } from "../config/config.js";
 import * as configModule from "../config/config.js";
 import * as sessionsModule from "../config/sessions.js";
@@ -907,14 +908,7 @@ describe("agentCommand", () => {
           { pluginId: "telegram", plugin: createTelegramOutboundPlugin(), source: "test" },
         ]),
       );
-      const deps = {
-        sendMessageWhatsApp: vi.fn(),
-        sendMessageTelegram: vi.fn().mockResolvedValue({ messageId: "t1", chatId: "123" }),
-        sendMessageSlack: vi.fn(),
-        sendMessageDiscord: vi.fn(),
-        sendMessageSignal: vi.fn(),
-        sendMessageIMessage: vi.fn(),
-      };
+      const deps = {} as CliDeps;
 
       const prevTelegramToken = process.env.TELEGRAM_BOT_TOKEN;
       process.env.TELEGRAM_BOT_TOKEN = "";

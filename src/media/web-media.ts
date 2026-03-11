@@ -4,17 +4,17 @@ import { fileURLToPath } from "node:url";
 import { logVerbose, shouldLogVerbose } from "../globals.js";
 import { SafeOpenError, readLocalFileSafely } from "../infra/fs-safe.js";
 import type { SsrFPolicy } from "../infra/net/ssrf.js";
-import { type MediaKind, maxBytesForKind } from "../media/constants.js";
-import { fetchRemoteMedia } from "../media/fetch.js";
+import { resolveUserPath } from "../utils.js";
+import { type MediaKind, maxBytesForKind } from "./constants.js";
+import { fetchRemoteMedia } from "./fetch.js";
 import {
   convertHeicToJpeg,
   hasAlphaChannel,
   optimizeImageToPng,
   resizeToJpeg,
-} from "../media/image-ops.js";
-import { getDefaultMediaLocalRoots } from "../media/local-roots.js";
-import { detectMime, extensionForMime, kindFromMime } from "../media/mime.js";
-import { resolveUserPath } from "../utils.js";
+} from "./image-ops.js";
+import { getDefaultMediaLocalRoots } from "./local-roots.js";
+import { detectMime, extensionForMime, kindFromMime } from "./mime.js";
 
 export type WebMediaResult = {
   buffer: Buffer;

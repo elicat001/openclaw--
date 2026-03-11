@@ -89,10 +89,6 @@ export function normalizeChannelId(raw?: string | null): ChannelId | null {
   return normalizeAnyChannelId(raw);
 }
 export {
-  listWhatsAppDirectoryGroupsFromConfig,
-  listWhatsAppDirectoryPeersFromConfig,
-} from "./directory-config.js";
-export {
   applyChannelMatchMeta,
   buildChannelKeyCandidates,
   normalizeChannelSlug,

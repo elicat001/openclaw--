@@ -23,5 +23,4 @@ export * from "./types.secrets.js";
 export * from "./types.skills.js";
 export * from "./types.tts.js";
 export * from "./types.tools.js";
-export * from "./types.whatsapp.js";
 export * from "./types.memory.js";

@@ -86,20 +86,4 @@ export type PluginRuntimeChannel = {
     shouldComputeCommandAuthorized: typeof import("../../auto-reply/command-detection.js").shouldComputeCommandAuthorized;
     shouldHandleTextCommands: typeof import("../../auto-reply/commands-registry.js").shouldHandleTextCommands;
   };
-  whatsapp: {
-    getActiveWebListener: typeof import("../../web/active-listener.js").getActiveWebListener;
-    getWebAuthAgeMs: typeof import("../../web/auth-store.js").getWebAuthAgeMs;
-    logoutWeb: typeof import("../../web/auth-store.js").logoutWeb;
-    logWebSelfId: typeof import("../../web/auth-store.js").logWebSelfId;
-    readWebSelfId: typeof import("../../web/auth-store.js").readWebSelfId;
-    webAuthExists: typeof import("../../web/auth-store.js").webAuthExists;
-    sendMessageWhatsApp: typeof import("../../web/outbound.js").sendMessageWhatsApp;
-    sendPollWhatsApp: typeof import("../../web/outbound.js").sendPollWhatsApp;
-    loginWeb: typeof import("../../web/login.js").loginWeb;
-    startWebLoginWithQr: typeof import("../../web/login-qr.js").startWebLoginWithQr;
-    waitForWebLogin: typeof import("../../web/login-qr.js").waitForWebLogin;
-    monitorWebChannel: typeof import("../../channels/web/index.js").monitorWebChannel;
-    handleWhatsAppAction: typeof import("../../agents/tools/whatsapp-actions.js").handleWhatsAppAction;
-    createLoginTool: typeof import("../../channels/plugins/agent-tools/whatsapp-login.js").createWhatsAppLoginTool;
-  };
 };

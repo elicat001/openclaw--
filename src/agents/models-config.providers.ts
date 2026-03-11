@@ -12,11 +12,6 @@ import {
   resolveCloudflareAiGatewayBaseUrl,
 } from "./cloudflare-ai-gateway.js";
 import {
-  buildDeepSeekModelDefinition,
-  DEEPSEEK_BASE_URL,
-  DEEPSEEK_MODEL_CATALOG,
-} from "./deepseek-models.js";
-import {
   buildHuggingfaceProvider,
   buildKilocodeProviderWithDiscovery,
   buildOllamaProvider,
@@ -67,7 +62,6 @@ import {
   resolveEnvSecretRefHeaderValueMarker,
 } from "./model-auth-markers.js";
 import { resolveAwsSdkEnvVarName, resolveEnvApiKey } from "./model-auth.js";
-import { buildZhipuModelDefinition, ZHIPU_BASE_URL, ZHIPU_MODEL_CATALOG } from "./zhipu-models.js";
 export { resolveOllamaApiBase } from "./models-config.providers.discovery.js";
 
 type ModelsConfig = NonNullable<OpenClawConfig["models"]>;
@@ -435,22 +429,6 @@ export function normalizeProviders(params: {
   return mutated ? next : providers;
 }
 
-export function buildDeepSeekProvider(): ProviderConfig {
-  return {
-    baseUrl: DEEPSEEK_BASE_URL,
-    api: "openai-completions",
-    models: DEEPSEEK_MODEL_CATALOG.map(buildDeepSeekModelDefinition),
-  };
-}
-
-export function buildZhipuProvider(): ProviderConfig {
-  return {
-    baseUrl: ZHIPU_BASE_URL,
-    api: "openai-completions",
-    models: ZHIPU_MODEL_CATALOG.map(buildZhipuModelDefinition),
-  };
-}
-
 type ImplicitProviderParams = {
   agentDir: string;
   config?: OpenClawConfig;
@@ -540,8 +518,6 @@ const SIMPLE_IMPLICIT_PROVIDER_LOADERS: ImplicitProviderLoader[] = [
     ...(await buildKilocodeProviderWithDiscovery()),
     apiKey,
   })),
-  withApiKey("deepseek", async ({ apiKey }) => ({ ...buildDeepSeekProvider(), apiKey })),
-  withApiKey("zhipu", async ({ apiKey }) => ({ ...buildZhipuProvider(), apiKey })),
 ];
 
 const PROFILE_IMPLICIT_PROVIDER_LOADERS: ImplicitProviderLoader[] = [

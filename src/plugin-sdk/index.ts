@@ -734,7 +734,7 @@ export type { SkillCommandSpec } from "../agents/skills.js";
 // Web media utilities
 // ---------------------------------------------------------------------------
 
-export { loadWebMedia, type WebMediaResult } from "../web/media.js";
+export { loadWebMedia, type WebMediaResult } from "../media/web-media.js";
 
 // ---------------------------------------------------------------------------
 // Context engine

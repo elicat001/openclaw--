@@ -4,11 +4,8 @@ import type { CliDeps } from "../cli/deps.js";
 import { runCronIsolatedAgentTurn } from "./isolated-agent.js";
 import { makeCfg, makeJob } from "./isolated-agent.test-harness.js";
 
-export function createCliDeps(overrides: Partial<CliDeps> = {}): CliDeps {
-  return {
-    sendMessageWhatsApp: vi.fn(),
-    ...overrides,
-  };
+export function createCliDeps(): CliDeps {
+  return {} as CliDeps;
 }
 
 export function mockAgentPayloads(

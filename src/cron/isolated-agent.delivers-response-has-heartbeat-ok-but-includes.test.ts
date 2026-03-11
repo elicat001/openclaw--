@@ -13,21 +13,24 @@ async function withTempHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
   return withTempHomeBase(fn, { prefix: "openclaw-cron-heartbeat-suite-" });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- legacy WhatsApp delivery test fixture
+type LegacyDeps = CliDeps & { sendMessageWhatsApp: any };
+
 async function createWhatsAppDeliveryFixture(home: string): Promise<{
   storePath: string;
-  deps: CliDeps;
+  deps: LegacyDeps;
 }> {
   const storePath = await writeSessionStore(home, {
     lastProvider: "whatsapp",
     lastChannel: "whatsapp",
     lastTo: "123",
   });
-  const deps: CliDeps = {
+  const deps = {
     sendMessageWhatsApp: vi.fn().mockResolvedValue({
       messageId: "w1",
       to: "123",
     }),
-  };
+  } as LegacyDeps;
   return { storePath, deps };
 }
 
@@ -44,7 +47,7 @@ function mockEmbeddedAgentPayloads(payloads: Array<{ text: string; mediaUrl?: st
 async function runWhatsAppAnnounceTurn(params: {
   home: string;
   storePath: string;
-  deps: CliDeps;
+  deps: LegacyDeps;
   cfg?: ReturnType<typeof makeCfg>;
   signal?: AbortSignal;
 }) {

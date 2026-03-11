@@ -14,7 +14,6 @@
     "src/plugin-sdk/index.ts",
     "src/plugin-sdk/core.ts",
     "src/plugin-sdk/compat.ts",
-    "src/plugin-sdk/whatsapp.ts",
     "src/plugin-sdk/account-id.ts",
     "src/plugin-sdk/keyed-async-queue.ts",
     "src/plugin-sdk/acpx.ts",

@@ -27,8 +27,6 @@ const requiredPathGroups = [
   "dist/plugin-sdk/root-alias.cjs",
   "dist/plugin-sdk/compat.js",
   "dist/plugin-sdk/compat.d.ts",
-  "dist/plugin-sdk/whatsapp.js",
-  "dist/plugin-sdk/whatsapp.d.ts",
   "dist/plugin-sdk/acpx.js",
   "dist/plugin-sdk/acpx.d.ts",
   "dist/plugin-sdk/copilot-proxy.js",

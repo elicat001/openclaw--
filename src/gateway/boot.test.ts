@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CliDeps } from "../cli/deps.js";
 import type { SessionScope } from "../config/sessions/types.js";
 
 const agentCommand = vi.fn();
@@ -41,14 +42,7 @@ describe("runBootOnce", () => {
     await fs.rm(storePath, { force: true });
   });
 
-  const makeDeps = () => ({
-    sendMessageWhatsApp: vi.fn(),
-    sendMessageTelegram: vi.fn(),
-    sendMessageDiscord: vi.fn(),
-    sendMessageSlack: vi.fn(),
-    sendMessageSignal: vi.fn(),
-    sendMessageIMessage: vi.fn(),
-  });
+  const makeDeps = (): CliDeps => ({}) as CliDeps;
 
   const withBootWorkspace = async (
     options: BootWorkspaceOptions,

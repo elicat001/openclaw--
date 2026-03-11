@@ -1,5 +1,4 @@
 import * as compatSdk from "openclaw/plugin-sdk/compat";
-import * as whatsappSdk from "openclaw/plugin-sdk/whatsapp";
 import { describe, expect, it } from "vitest";
 
 const bundledExtensionSubpathLoaders = [
@@ -31,11 +30,6 @@ describe("plugin-sdk subpath exports", () => {
   it("exports compat helpers", () => {
     expect(typeof compatSdk.emptyPluginConfigSchema).toBe("function");
     expect(typeof compatSdk.resolveControlCommandGate).toBe("function");
-  });
-
-  it("exports WhatsApp helpers", () => {
-    expect(typeof whatsappSdk.resolveWhatsAppAccount).toBe("function");
-    expect(typeof whatsappSdk.whatsappOnboardingAdapter).toBe("object");
   });
 
   it("resolves bundled extension subpaths", async () => {

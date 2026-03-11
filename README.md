@@ -6,12 +6,12 @@
 
 <p align="center">
   基于 <a href="https://github.com/openclaw/openclaw">OpenClaw</a> 的精简中国区增强版<br/>
-  <strong>16 平台互联网接入 · 国产大模型 · 反爬引擎 · 轻量双通道</strong>
+  <strong>16 平台互联网接入 · 反爬引擎 · 飞书渠道</strong>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/upstream-v2026.3.9-blue" alt="upstream" />
-  <img src="https://img.shields.io/badge/channels-WhatsApp_%2B_Feishu-blueviolet" alt="channels" />
+  <img src="https://img.shields.io/badge/channel-Feishu-blueviolet" alt="channel" />
   <img src="https://img.shields.io/badge/platforms-16-orange" alt="platforms" />
 </p>
 
@@ -19,7 +19,7 @@
 
 ## 设计理念
 
-本 fork 对上游 OpenClaw 进行**大幅精简**，移除 Telegram / Discord / Slack / Signal / iMessage / LINE / IRC / Google Chat / MS Teams / BlueBubbles 等 10+ 渠道及 24 个扩展目录，仅保留 **WhatsApp** 和 **飞书 (Feishu)** 双通道，降低部署复杂度和依赖体积。同时叠加中国区专属能力：国产大模型、16 平台互联网接入、反爬引擎。
+本 fork 对上游 OpenClaw 进行**大幅精简**，移除 WhatsApp / Telegram / Discord / Slack / Signal / iMessage / LINE / IRC / Google Chat / MS Teams / BlueBubbles 等渠道及扩展目录，仅保留**飞书 (Feishu)** 单通道，降低部署复杂度和依赖体积。同时叠加中国区专属能力：16 平台互联网接入、反爬引擎。
 
 ---
 
@@ -27,13 +27,12 @@
 
 | 能力                                       |  上游 OpenClaw  |     本 Fork     |
 | ------------------------------------------ | :-------------: | :-------------: |
-| 消息渠道                                   |    14+ 渠道     | WhatsApp + 飞书 |
+| 消息渠道                                   |    14+ 渠道     |      飞书       |
 | 中文互联网平台 (微博/B站/小红书/抖音/微信) |        -        |     16 平台     |
-| DeepSeek / 智谱 GLM 模型                   |        -        |    原生支持     |
 | 反爬抓取 (Cloudflare bypass)               |        -        |     3 模式      |
 | Admin Dashboard                            |        -        |  LitElement UI  |
 | WebSocket 连接池                           |        -        | 心跳 + 断线重连 |
-| 部署复杂度                                 | 高 (多渠道依赖) | 低 (双通道精简) |
+| 部署复杂度                                 | 高 (多渠道依赖) | 低 (单通道精简) |
 
 ---
 
@@ -88,31 +87,6 @@ AI Agent 可搜索、阅读、交互以下平台，按配置难度分三级：
 
 ---
 
-## 国产大模型
-
-### DeepSeek
-
-| 模型        | ID                  | 上下文 | 定价 (USD/1M tokens) |
-| ----------- | ------------------- | ------ | -------------------- |
-| DeepSeek V3 | `deepseek-chat`     | 64K    | $0.27 入 / $1.10 出  |
-| DeepSeek R1 | `deepseek-reasoner` | 64K    | $0.55 入 / $2.19 出  |
-
-### 智谱 AI (Zhipu)
-
-| 模型        | ID            | 上下文 | 特点               |
-| ----------- | ------------- | ------ | ------------------ |
-| GLM-4 Plus  | `glm-4-plus`  | 128K   | 通用对话           |
-| GLM-4 Flash | `glm-4-flash` | 128K   | 免费额度           |
-| GLM-4V Plus | `glm-4v-plus` | 8K     | 多模态 (图片理解)  |
-| GLM-Z1 Plus | `glm-z1-plus` | 128K   | 推理增强，16K 输出 |
-
-```bash
-export DEEPSEEK_API_KEY="sk-xxx"
-export ZHIPU_API_KEY="xxx.xxx"
-```
-
----
-
 ## 快速开始
 
 ### 1. 克隆与安装
@@ -143,9 +117,7 @@ pip3 install --user 'camoufox[geoip]' markdownify beautifulsoup4 miku_ai
 
 ```bash
 # 至少配置一个模型 API Key
-export DEEPSEEK_API_KEY="sk-xxx"        # DeepSeek
-export ZHIPU_API_KEY="xxx.xxx"          # 智谱
-export ANTHROPIC_API_KEY="sk-ant-xxx"   # Anthropic (上游默认)
+export ANTHROPIC_API_KEY="sk-ant-xxx"   # Anthropic
 export OPENAI_API_KEY="sk-xxx"          # OpenAI
 ```
 
@@ -178,11 +150,6 @@ src/agent-reach/                    # 16 平台互联网接入引擎
 src/agents/tools/
   └── scrapling-tool.ts             # Scrapling 反爬工具 (JSON stdin)
 
-src/agents/
-  ├── deepseek-models.ts            # DeepSeek 模型定义与定价
-  └── zhipu-models.ts               # 智谱模型定义与定价
-
-extensions/whatsapp/                # WhatsApp 渠道插件
 extensions/feishu/                  # 飞书渠道插件
 
 src/gateway/
@@ -195,13 +162,17 @@ skills/agent-reach/SKILL.md         # Agent Reach 技能文档
 
 ---
 
-## 移除的渠道
+## 移除的渠道与模型
 
 以下渠道已从本 fork 中移除以精简部署：
 
-Telegram · Discord · Slack · Signal · iMessage · LINE · IRC · Google Chat · MS Teams · BlueBubbles · Matrix · Mattermost · Nextcloud Talk · Nostr · Synology Chat · Tlon · Twitch · Zalo
+WhatsApp · Telegram · Discord · Slack · Signal · iMessage · LINE · IRC · Google Chat · MS Teams · BlueBubbles · Matrix · Mattermost · Nextcloud Talk · Nostr · Synology Chat · Tlon · Twitch · Zalo
 
-如需这些渠道，请使用[上游 OpenClaw](https://github.com/openclaw/openclaw)。
+以下国产模型提供商已移除（可通过 OpenRouter 等第三方中转访问）：
+
+DeepSeek · 智谱 AI (Zhipu GLM)
+
+如需完整渠道和模型支持，请使用[上游 OpenClaw](https://github.com/openclaw/openclaw)。
 
 ---
 
@@ -238,8 +209,6 @@ git merge upstream/main
 ## 相关项目
 
 - [OpenClaw](https://github.com/openclaw/openclaw) — 上游项目
-- [DeepSeek API](https://api-docs.deepseek.com/) — DeepSeek 文档
-- [智谱 AI](https://open.bigmodel.cn/) — Zhipu GLM 文档
 - [Scrapling](https://github.com/D4Vinci/Scrapling) — Python 反爬框架
 
 ## License

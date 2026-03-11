@@ -57,7 +57,6 @@ import {
   upsertChannelPairingRequest,
 } from "../../pairing/pairing-store.js";
 import { buildAgentSessionKey, resolveAgentRoute } from "../../routing/resolve-route.js";
-import { createRuntimeWhatsApp } from "./runtime-whatsapp.js";
 import type { PluginRuntime } from "./types.js";
 
 export function createRuntimeChannel(): PluginRuntime["channel"] {
@@ -143,6 +142,5 @@ export function createRuntimeChannel(): PluginRuntime["channel"] {
       shouldComputeCommandAuthorized,
       shouldHandleTextCommands,
     },
-    whatsapp: createRuntimeWhatsApp(),
   };
 }

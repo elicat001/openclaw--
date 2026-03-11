@@ -72,10 +72,7 @@ const runtime: RuntimeEnv = {
   }),
 };
 
-const makeDeps = (overrides: Partial<CliDeps> = {}): CliDeps => ({
-  sendMessageWhatsApp: vi.fn(),
-  ...overrides,
-});
+const makeDeps = (): CliDeps => ({}) as CliDeps;
 
 const createStubPlugin = (params: {
   id: ChannelPlugin["id"];

@@ -2,12 +2,9 @@ import {
   deleteAccountFromConfigSection,
   setAccountEnabledInConfigSection,
 } from "../channels/plugins/config-helpers.js";
-import { normalizeWhatsAppAllowFromEntries } from "../channels/plugins/normalize/whatsapp.js";
 import type { ChannelConfigAdapter } from "../channels/plugins/types.adapters.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { normalizeAccountId } from "../routing/session-key.js";
 import { normalizeStringEntries } from "../shared/string-normalization.js";
-import { resolveWhatsAppAccount } from "../web/accounts.js";
 
 export function mapAllowFromEntries(
   allowFrom: Array<string | number> | null | undefined,
@@ -101,25 +98,4 @@ export function createScopedChannelConfigBase<
         clearBaseFields: params.clearBaseFields,
       }),
   };
-}
-
-export function resolveWhatsAppConfigAllowFrom(params: {
-  cfg: OpenClawConfig;
-  accountId?: string | null;
-}): string[] {
-  return resolveWhatsAppAccount(params).allowFrom ?? [];
-}
-
-export function formatWhatsAppConfigAllowFromEntries(allowFrom: Array<string | number>): string[] {
-  return normalizeWhatsAppAllowFromEntries(allowFrom);
-}
-
-export function resolveWhatsAppConfigDefaultTo(params: {
-  cfg: OpenClawConfig;
-  accountId?: string | null;
-}): string | undefined {
-  const root = params.cfg.channels?.whatsapp;
-  const normalized = normalizeAccountId(params.accountId);
-  const account = root?.accounts?.[normalized];
-  return (account?.defaultTo ?? root?.defaultTo)?.trim() || undefined;
 }

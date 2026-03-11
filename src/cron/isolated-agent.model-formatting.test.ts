@@ -14,14 +14,7 @@ import type { CronJob } from "./types.js";
 const withTempHome = withTempCronHome;
 
 function makeDeps() {
-  return {
-    sendMessageSlack: vi.fn(),
-    sendMessageWhatsApp: vi.fn(),
-    sendMessageTelegram: vi.fn(),
-    sendMessageDiscord: vi.fn(),
-    sendMessageSignal: vi.fn(),
-    sendMessageIMessage: vi.fn(),
-  };
+  return {};
 }
 
 function mockEmbeddedOk() {
