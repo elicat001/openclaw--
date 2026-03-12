@@ -1,5 +1,17 @@
 # Platform Anti-Bot & Technical Notes
 
+## Amazon US (amazon-us)
+
+- **Search pages**: curl works with standard headers (User-Agent, Accept-Language en-US)
+- **Detail pages**: curl returns redirect/captcha — must use Camoufox headless browser
+- **Cookie jar**: `/tmp/amazon-us-cookies.txt`
+- **Rate limiting**: Same as amazon-br (2s search, 1s detail)
+- **Price format**: `$xx.xx` (USD), parsed via `a-price-whole` + `a-price-fraction`
+- **Rating format**: `4.5 out of 5 stars`
+- **Sold indicator**: `X bought in past month`
+- **SKU variants**: Same DOM structure as amazon-br, English UI strings
+- **Usage**: Cross-market comparison source — crawl US bestsellers to find BR blue ocean opportunities
+
 ## Amazon Brazil (amazon-br)
 
 - **Search pages**: curl works fine with standard headers (User-Agent, Accept-Language pt-BR)

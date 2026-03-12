@@ -62,6 +62,10 @@ const crawlerRegistry: Record<string, () => Promise<CrawlerModule>> = {
     const mod = await import("./crawlers/meli.ts");
     return mod.meli;
   },
+  "amazon-us": async () => {
+    const mod = await import("./crawlers/amazon-us.ts");
+    return mod.amazonUs;
+  },
 };
 
 // ── Pipeline Stages ──
@@ -126,6 +130,32 @@ async function runAnalyze(): Promise<void> {
   });
 }
 
+async function runOpportunity(): Promise<void> {
+  const usDataPath = `${outputDir}/amazon-us.json`;
+  if (!existsSync(usDataPath)) {
+    console.log(`\n[opportunity] Skipping: no US data found at ${usDataPath}`);
+    return;
+  }
+  const { execFileSync } = await import("node:child_process");
+  const opportunityScript = new URL("./opportunity.ts", import.meta.url).pathname;
+  const reportPath = `${outputDir}/opportunity-report.md`;
+  console.log(`\n═══ Running Opportunity Analysis ═══\n`);
+  execFileSync(
+    "pnpm",
+    [
+      "tsx",
+      opportunityScript,
+      "--us-data",
+      usDataPath,
+      "--br-data",
+      outputDir,
+      "--output",
+      reportPath,
+    ],
+    { stdio: "inherit" },
+  );
+}
+
 // ── Main ──
 
 async function main(): Promise<void> {
@@ -137,6 +167,9 @@ async function main(): Promise<void> {
   }
   if (pipeline === "analyze" || pipeline === "full") {
     await runAnalyze();
+  }
+  if (pipeline === "opportunity" || pipeline === "full") {
+    await runOpportunity();
   }
 }
 
