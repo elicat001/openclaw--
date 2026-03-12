@@ -97,9 +97,27 @@ for i in range(1, len(parts), 2):
         rating = rating_m.group(1)
 
     reviews = ""
-    rev_m = re.search(r'<span[^>]*class="[^"]*s-underline-text[^"]*"[^>]*>([\d.]+)', block)
-    if rev_m:
-        reviews = rev_m.group(1)
+    # Multiple patterns for review count extraction (BR DOM varies)
+    # BR uses "classificações" (not "avaliações"), dots for thousands,
+    # and s-underline-text may contain "3,3 mil" or plain numbers
+    rev_patterns = [
+        r'aria-label="[^"]*?(\d[\d.]+)\s+classifica',
+        r'<span[^>]*s-underline-text[^>]*>\(?([\d,]+\s*mil)\)?',
+        r'<span[^>]*s-underline-text[^>]*>\(?(\d+)\)?',
+        r'(\d[\d.]+)\s+classifica',
+        r'href="[^"]*#customerReviews[^"]*"[^>]*>([\d.]+)',
+    ]
+    for pat in rev_patterns:
+        rev_m = re.search(pat, block)
+        if rev_m:
+            raw_rev = rev_m.group(1).strip()
+            # Normalize BR review formats: "3,3 mil" → "3300", "2.111" → "2111"
+            if "mil" in raw_rev:
+                num_part = raw_rev.replace("mil", "").strip().replace(",", ".")
+                reviews = str(int(float(num_part) * 1000))
+            else:
+                reviews = raw_rev.replace(".", "")
+            break
 
     image = ""
     img_m = re.search(r'<img[^>]*class="s-image"[^>]*src="([^"]+)"', block)

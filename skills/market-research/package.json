@@ -1,0 +1,23 @@
+{
+  "name": "cross-selector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "跨境电商选品交叉验证工具 — Cross-border e-commerce product selection toolkit",
+  "type": "module",
+  "scripts": {
+    "analyze": "tsx scripts/analyze.ts",
+    "clean": "tsx scripts/clean.ts",
+    "crawl": "tsx scripts/crawl.ts",
+    "discover": "tsx scripts/discover.ts",
+    "opportunity": "tsx scripts/opportunity.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

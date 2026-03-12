@@ -102,7 +102,7 @@ for i in range(1, len(parts), 2):
     # Multiple patterns for review count extraction (US DOM varies)
     rev_patterns = [
         r'<span[^>]*class="[^"]*s-underline-text[^"]*"[^>]*>([\d,]+)',
-        r'aria-label="[^"]*(\d[\d,]+)\s+ratings?"',
+        r'aria-label="[^"]*?(\d[\d,]+)\s+ratings?"',
         r'href="[^"]*#customerReviews[^"]*"[^>]*>([\d,]+)',
         r'(\d[\d,]+)\s+ratings?',
         r'a-size-base[^>]*>([\d,]+)\s*$',

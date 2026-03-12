@@ -138,6 +138,23 @@ export function estimateCostAtPrice(
 }
 
 /**
+ * Estimate cost for a new Chinese OEM seller entering Brazil market.
+ * Assumes supply_chain = "Chinese brand / OEM" (20% factory cost ratio).
+ */
+export function estimateCostForNewEntry(
+  targetPriceBRL: number,
+  weightKg: number,
+  category?: string,
+): CostEstimate {
+  return estimateCost({
+    price_numeric: targetPriceBRL,
+    supply_chain: "Chinese brand / OEM",
+    weight_estimate_kg: weightKg,
+    category,
+  });
+}
+
+/**
  * Format cost estimate as a readable summary line.
  */
 export function formatCostSummary(est: CostEstimate): string {
