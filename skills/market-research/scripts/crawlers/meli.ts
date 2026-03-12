@@ -1,11 +1,31 @@
-#!/usr/bin/env bun
 /**
- * Crawl top electric drills from Mercado Livre Brazil.
+ * Mercado Livre crawler module.
  * Phase 1: Search pages → collect product links
  * Phase 2: Detail pages → extract all images + SKU variants
  */
 import { execFile } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import type { CrawlerModule, CrawlOptions, RawProduct } from "./types.ts";
+
+// ── Internal types ──
+
+type SearchResult = {
+  name: string;
+  price: string;
+  rating: string;
+  reviews: string;
+  sold: string;
+  image: string;
+  link: string;
+};
+
+type DetailResult = {
+  images: string[];
+  price: string;
+  original_price: string;
+  skus: Array<{ name: string; price: string }>;
+};
+
+// ── Helpers ──
 
 function curlFetch(url: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -37,32 +57,9 @@ function curlFetch(url: string): Promise<string> {
   });
 }
 
-type MeliSku = {
-  name: string;
-  price: string;
-};
-
-type MeliProduct = {
-  name: string;
-  price: string;
-  original_price: string;
-  rating: string;
-  reviews: string;
-  sold: string;
-  images: string[];
-  link: string;
-  skus: MeliSku[];
-};
-
-type SearchResult = {
-  name: string;
-  price: string;
-  rating: string;
-  reviews: string;
-  sold: string;
-  image: string;
-  link: string;
-};
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 function parseSearchResults(html: string): Promise<SearchResult[]> {
   const script = String.raw`
@@ -136,9 +133,9 @@ for block in blocks[1:]:
 print(json.dumps(products, ensure_ascii=False))
 `;
   return new Promise((resolve) => {
-    const child = execFile("python3", ["-c", script], { maxBuffer: 20_000_000 }, (err, stdout) => {
-      if (err) {
-        console.log("  Parse error:", err.message);
+    const child = execFile("python3", ["-c", script], { maxBuffer: 20_000_000 }, (_err, stdout) => {
+      if (_err) {
+        console.log("  Parse error:", _err.message);
         resolve([]);
         return;
       }
@@ -152,13 +149,6 @@ print(json.dumps(products, ensure_ascii=False))
     child.stdin?.end();
   });
 }
-
-type DetailResult = {
-  images: string[];
-  price: string;
-  original_price: string;
-  skus: MeliSku[];
-};
 
 function parseDetailPage(html: string): Promise<DetailResult | null> {
   const script = String.raw`
@@ -238,8 +228,8 @@ for attr_block in attr_blocks[:10]:
 print(json.dumps(result, ensure_ascii=False))
 `;
   return new Promise((resolve) => {
-    const child = execFile("python3", ["-c", script], { maxBuffer: 20_000_000 }, (err, stdout) => {
-      if (err) {
+    const child = execFile("python3", ["-c", script], { maxBuffer: 20_000_000 }, (_err, stdout) => {
+      if (_err) {
         resolve(null);
         return;
       }
@@ -254,61 +244,30 @@ print(json.dumps(result, ensure_ascii=False))
   });
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+// ── Query generation ──
+
+const VARIANT_SUFFIXES = ["-profissional", "-bateria"];
+
+function buildQueries(keyword: string): string[] {
+  const base = keyword.trim().replace(/\s+/g, "-");
+  const queries = [base];
+  for (const suffix of VARIANT_SUFFIXES) {
+    queries.push(base + suffix);
+  }
+  return queries;
 }
 
-async function main() {
-  // ── Phase 1: Collect product links from search pages ──
-  console.log("═══ Phase 1: Search pages ═══\n");
-  const searchResults: SearchResult[] = [];
+// ── Dedup helpers ──
 
-  // Multiple search queries to maximize unique products
-  const queries = [
-    "furadeira-eletrica",
-    "furadeira-de-impacto",
-    "parafusadeira-furadeira",
-    "furadeira-profissional",
-    "martelete-furadeira",
-    "furadeira-bateria",
-  ];
-
-  for (const query of queries) {
-    for (let offset = 0; offset < 200; offset += 50) {
-      const url =
-        offset === 0
-          ? `https://lista.mercadolivre.com.br/${query}_OrderId_PRICE*QUANTITY_DESC`
-          : `https://lista.mercadolivre.com.br/${query}_Desde_${offset + 1}_OrderId_PRICE*QUANTITY_DESC`;
-      console.log(`[MeLi] "${query}" offset ${offset}...`);
-      try {
-        const html = await curlFetch(url);
-        const products = await parseSearchResults(html);
-        console.log(
-          `  Found ${products.length} products (total: ${searchResults.length + products.length})`,
-        );
-        searchResults.push(...products);
-        await sleep(1500);
-      } catch (e: unknown) {
-        console.log(`  Error: ${String(e)}`);
-      }
-    }
-    // Early exit if we have enough raw results
-    if (searchResults.length >= 1500) {
-      break;
-    }
-  }
-
-  // Dedup by cleaned link, then by name for tracking links
+function deduplicateSearchResults(results: SearchResult[]): SearchResult[] {
   const seen = new Set<string>();
-  const uniqueSearch = searchResults.filter((p) => {
-    // Skip tracking/redirect links for dedup key — use name instead
+  return results.filter((p) => {
     const isTrackingLink = !p.link || p.link.includes("click1.mercadolivre");
     const key = isTrackingLink ? p.name.toLowerCase().trim() : p.link;
     if (seen.has(key)) {
       return false;
     }
     seen.add(key);
-    // Also dedup by name to catch same product from different queries
     const nameKey = p.name.toLowerCase().trim();
     if (seen.has(nameKey)) {
       return false;
@@ -316,114 +275,134 @@ async function main() {
     seen.add(nameKey);
     return true;
   });
+}
 
-  const targets = uniqueSearch.slice(0, 300);
-  console.log(`\nPhase 1 done: ${targets.length} unique products\n`);
+// ── Map to RawProduct ──
 
-  // ── Phase 2: Fetch detail pages for images + SKU ──
-  console.log("═══ Phase 2: Detail pages ═══\n");
-  const results: MeliProduct[] = [];
-  let detailOk = 0;
-  let detailFail = 0;
+function toRawProduct(item: SearchResult, detail: DetailResult | null): RawProduct {
+  if (detail) {
+    return {
+      name: item.name,
+      price: detail.price || item.price,
+      original_price: detail.original_price || undefined,
+      rating: item.rating || undefined,
+      reviews: item.reviews || undefined,
+      sold: item.sold || undefined,
+      images: detail.images.length > 0 ? detail.images : item.image ? [item.image] : [],
+      link: item.link,
+      skus: detail.skus.map((s) => ({
+        name: s.name,
+        price: s.price || undefined,
+      })),
+      source: "meli",
+    };
+  }
 
-  for (let i = 0; i < targets.length; i++) {
-    const item = targets[i];
-    if (!item.link || item.link.includes("click1.mercadolivre")) {
-      // Skip tracking/redirect links that won't have product pages
-      results.push({
-        name: item.name,
-        price: item.price,
-        original_price: "",
-        rating: item.rating,
-        reviews: item.reviews,
-        sold: item.sold,
-        images: item.image ? [item.image] : [],
-        link: item.link,
-        skus: [],
-      });
-      continue;
+  return {
+    name: item.name,
+    price: item.price,
+    original_price: undefined,
+    rating: item.rating || undefined,
+    reviews: item.reviews || undefined,
+    sold: item.sold || undefined,
+    images: item.image ? [item.image] : [],
+    link: item.link,
+    skus: [],
+    source: "meli",
+  };
+}
+
+// ── Module export ──
+
+export const meli: CrawlerModule = {
+  name: "meli",
+
+  crawl: async (opts: CrawlOptions): Promise<RawProduct[]> => {
+    const queries = buildQueries(opts.keyword);
+
+    // ── Phase 1: Search pages ──
+    console.log("[meli] Phase 1: Search pages");
+    const searchResults: SearchResult[] = [];
+
+    for (const query of queries) {
+      for (let offset = 0; offset < 200; offset += 50) {
+        const url =
+          offset === 0
+            ? `https://lista.mercadolivre.com.br/${query}_OrderId_PRICE*QUANTITY_DESC`
+            : `https://lista.mercadolivre.com.br/${query}_Desde_${offset + 1}_OrderId_PRICE*QUANTITY_DESC`;
+        console.log(`[meli] "${query}" offset ${offset}...`);
+        try {
+          const html = await curlFetch(url);
+          const products = await parseSearchResults(html);
+          console.log(
+            `  Found ${products.length} products (total: ${searchResults.length + products.length})`,
+          );
+          searchResults.push(...products);
+          await sleep(1500);
+        } catch (e: unknown) {
+          console.log(`  Error: ${String(e)}`);
+        }
+      }
+      // Early exit if we have enough raw results
+      if (searchResults.length >= opts.maxProducts * 5) {
+        break;
+      }
     }
 
-    // Clean the URL
-    const cleanUrl = item.link.split("#")[0].split("?")[0];
+    const unique = deduplicateSearchResults(searchResults);
+    const targets = unique.slice(0, opts.maxProducts);
+    console.log(`[meli] Phase 1 done: ${targets.length} unique products`);
 
-    try {
-      const html = await curlFetch(cleanUrl);
+    // ── Phase 2: Detail pages ──
+    console.log("[meli] Phase 2: Detail pages");
+    const results: RawProduct[] = [];
+    let detailOk = 0;
+    let detailFail = 0;
 
-      if (html.length < 10000) {
-        // Too small, likely error page
-        results.push({
-          name: item.name,
-          price: item.price,
-          original_price: "",
-          rating: item.rating,
-          reviews: item.reviews,
-          sold: item.sold,
-          images: item.image ? [item.image] : [],
-          link: item.link,
-          skus: [],
-        });
-        detailFail++;
+    for (let i = 0; i < targets.length; i++) {
+      const item = targets[i];
+
+      if (!item.link || item.link.includes("click1.mercadolivre")) {
+        results.push(toRawProduct(item, null));
         continue;
       }
 
-      const detail = await parseDetailPage(html);
-      if (detail) {
-        results.push({
-          name: item.name,
-          price: detail.price || item.price,
-          original_price: detail.original_price,
-          rating: item.rating,
-          reviews: item.reviews,
-          sold: item.sold,
-          images: detail.images.length > 0 ? detail.images : item.image ? [item.image] : [],
-          link: item.link,
-          skus: detail.skus,
-        });
-        detailOk++;
-        if ((i + 1) % 20 === 0 || i === targets.length - 1) {
-          console.log(
-            `  [${i + 1}/${targets.length}] ${detailOk} ok, ${detailFail} fail | last: ${detail.images.length} imgs, ${detail.skus.length} skus`,
-          );
+      const cleanUrl = item.link.split("#")[0].split("?")[0];
+
+      try {
+        const html = await curlFetch(cleanUrl);
+
+        if (html.length < 10000) {
+          results.push(toRawProduct(item, null));
+          detailFail++;
+          continue;
         }
-      } else {
-        results.push({
-          name: item.name,
-          price: item.price,
-          original_price: "",
-          rating: item.rating,
-          reviews: item.reviews,
-          sold: item.sold,
-          images: item.image ? [item.image] : [],
-          link: item.link,
-          skus: [],
-        });
+
+        const detail = await parseDetailPage(html);
+        if (detail) {
+          results.push(toRawProduct(item, detail));
+          detailOk++;
+          if ((i + 1) % 20 === 0 || i === targets.length - 1) {
+            console.log(
+              `  [${i + 1}/${targets.length}] ${detailOk} ok, ${detailFail} fail | last: ${detail.images.length} imgs, ${detail.skus.length} skus`,
+            );
+          }
+        } else {
+          results.push(toRawProduct(item, null));
+          detailFail++;
+        }
+      } catch {
+        results.push(toRawProduct(item, null));
         detailFail++;
       }
-    } catch {
-      results.push({
-        name: item.name,
-        price: item.price,
-        original_price: "",
-        rating: item.rating,
-        reviews: item.reviews,
-        sold: item.sold,
-        images: item.image ? [item.image] : [],
-        link: item.link,
-        skus: [],
-      });
-      detailFail++;
+
+      await sleep(2000);
     }
 
-    await sleep(2000);
-  }
+    console.log(
+      `[meli] Done: ${results.length} products | ${detailOk} detail ok, ${detailFail} detail fail`,
+    );
 
-  writeFileSync("/tmp/meli-drills.json", JSON.stringify(results, null, 2));
-  const avgImages = results.reduce((s, p) => s + p.images.length, 0) / results.length;
-  const withSkus = results.filter((p) => p.skus.length > 0).length;
-  console.log(
-    `\n[MeLi] Done: ${results.length} products | avg ${avgImages.toFixed(1)} images/product | ${withSkus} with SKUs`,
-  );
-}
-
-main().catch(console.error);
+    return results;
+  },
+};
