@@ -1,0 +1,58 @@
+import type { BrandEntry } from "./index.ts";
+
+export const drillBrands: BrandEntry[] = [
+  // Global brands
+  { patterns: ["BOSCH"], name: "Bosch", origin: "global" },
+  { patterns: ["DEWALT", "DE WALT"], name: "DeWalt", origin: "global" },
+  { patterns: ["MAKITA"], name: "Makita", origin: "global" },
+  { patterns: ["STANLEY"], name: "Stanley", origin: "global" },
+  {
+    patterns: ["BLACK+DECKER", "BLACK DECKER", "BLACK&DECKER", "B&D"],
+    name: "BLACK+DECKER",
+    origin: "global",
+  },
+  { patterns: ["MILWAUKEE"], name: "Milwaukee", origin: "global" },
+  { patterns: ["HILTI"], name: "Hilti", origin: "global" },
+  { patterns: ["METABO"], name: "Metabo", origin: "global" },
+  { patterns: ["SKIL"], name: "Skil", origin: "global" },
+  { patterns: ["DREMEL"], name: "Dremel", origin: "global" },
+  { patterns: ["RIDGID"], name: "Ridgid", origin: "global" },
+  { patterns: ["KRESS"], name: "Kress", origin: "global" },
+  // German
+  { patterns: ["EINHELL"], name: "Einhell", origin: "global" },
+  // Brazilian brands
+  { patterns: ["MONDIAL"], name: "Mondial", origin: "brazil" },
+  { patterns: ["WAP"], name: "WAP", origin: "brazil" },
+  { patterns: ["VONDER"], name: "Vonder", origin: "brazil" },
+  { patterns: ["TRAMONTINA"], name: "Tramontina", origin: "brazil" },
+  { patterns: ["SCHULZ"], name: "Schulz", origin: "brazil" },
+  { patterns: ["PHILCO"], name: "Philco", origin: "brazil" },
+  { patterns: ["WORKER"], name: "Worker", origin: "brazil" },
+  { patterns: ["GAMMA"], name: "Gamma", origin: "brazil" },
+  { patterns: ["FORTGPRO", "FORTG PRO", "FORTG"], name: "FortG Pro", origin: "brazil" },
+  { patterns: ["HAMMER"], name: "Hammer", origin: "brazil" },
+  { patterns: ["LYNUS"], name: "Lynus", origin: "brazil" },
+  { patterns: ["TITAN"], name: "Titan", origin: "brazil" },
+  { patterns: ["DEXTER"], name: "Dexter", origin: "brazil" },
+  { patterns: ["EOS"], name: "Eos", origin: "brazil" },
+  { patterns: ["MESTRI"], name: "Mestri", origin: "brazil" },
+  { patterns: ["NOVE54"], name: "Nove54", origin: "brazil" },
+  { patterns: ["CHARBS"], name: "Charbs", origin: "brazil" },
+  { patterns: ["GRADIENTE"], name: "Gradiente", origin: "brazil" },
+  { patterns: ["VULCAN"], name: "Vulcan", origin: "brazil" },
+  // Chinese brands (often white-label / OEM)
+  {
+    patterns: ["THE BLACK TOOLS", "BLACK TOOLS", "THEBLACKTOOLS"],
+    name: "The Black Tools",
+    origin: "china",
+  },
+  { patterns: ["HOLTTER"], name: "Holtter", origin: "china" },
+  { patterns: ["SONGHE"], name: "Songhe", origin: "china" },
+  { patterns: ["NKF"], name: "NKF", origin: "china" },
+  { patterns: ["SPARKBR"], name: "SparkBr", origin: "china" },
+  { patterns: ["HANABI"], name: "Hanabi", origin: "china" },
+  { patterns: ["DEKO"], name: "Deko", origin: "china" },
+  { patterns: ["HILDA"], name: "Hilda", origin: "china" },
+  { patterns: ["PROSTORMER"], name: "Prostormer", origin: "china" },
+  { patterns: ["KAMOLEE"], name: "Kamolee", origin: "china" },
+];
