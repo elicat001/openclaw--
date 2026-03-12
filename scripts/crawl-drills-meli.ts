@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 /**
- * Crawl top electric drills from Mercado Livre Brazil with name, price, rating, link, image, sold
+ * Crawl top electric drills from Mercado Livre Brazil.
+ * Phase 1: Search pages → collect product links
+ * Phase 2: Detail pages → extract all images + SKU variants
  */
 import { execFile } from "node:child_process";
 import { writeFileSync } from "node:fs";
@@ -35,7 +37,24 @@ function curlFetch(url: string): Promise<string> {
   });
 }
 
+type MeliSku = {
+  name: string;
+  price: string;
+};
+
 type MeliProduct = {
+  name: string;
+  price: string;
+  original_price: string;
+  rating: string;
+  reviews: string;
+  sold: string;
+  images: string[];
+  link: string;
+  skus: MeliSku[];
+};
+
+type SearchResult = {
   name: string;
   price: string;
   rating: string;
@@ -45,19 +64,16 @@ type MeliProduct = {
   link: string;
 };
 
-function parseProducts(html: string): Promise<MeliProduct[]> {
+function parseSearchResults(html: string): Promise<SearchResult[]> {
   const script = String.raw`
 import json, sys, re
 
 html = sys.stdin.read()
 products = []
 
-# Mercado Livre uses ui-search-layout items
-# Split by product card sections
 blocks = re.split(r'<li[^>]*class="[^"]*ui-search-layout__item[^"]*"', html)
 
 for block in blocks[1:]:
-    # Name from title
     name = ""
     name_m = re.search(r'class="[^"]*poly-component__title[^"]*"[^>]*>(.*?)</[ah]', block, re.DOTALL)
     if name_m:
@@ -71,7 +87,6 @@ for block in blocks[1:]:
 
     name = name.replace('&amp;', '&').replace('&#39;', "'").replace('&quot;', '"')
 
-    # Price
     price = ""
     price_m = re.search(r'class="[^"]*andes-money-amount__fraction[^"]*"[^>]*>(\d[\d.]*)', block)
     if price_m:
@@ -80,7 +95,6 @@ for block in blocks[1:]:
         if cents_m:
             price += f",{cents_m.group(1)}"
 
-    # Rating
     rating = ""
     rating_m = re.search(r'class="[^"]*poly-reviews__rating[^"]*"[^>]*>([\d,.]+)', block)
     if not rating_m:
@@ -88,19 +102,16 @@ for block in blocks[1:]:
     if rating_m:
         rating = rating_m.group(1)
 
-    # Reviews count
     reviews = ""
     rev_m = re.search(r'class="[^"]*poly-reviews__total[^"]*"[^>]*>\(?(\d[\d.]*)', block)
     if rev_m:
         reviews = rev_m.group(1)
 
-    # Sold count
     sold = ""
     sold_m = re.search(r'(\d[\d.]*\+?\s*vendido)', block)
     if sold_m:
         sold = sold_m.group(1)
 
-    # Image
     image = ""
     img_m = re.search(r'<img[^>]*(?:data-src|src)="(https://[^"]*meli[^"]*\.(?:jpg|png|webp)[^"]*)"', block)
     if not img_m:
@@ -108,7 +119,6 @@ for block in blocks[1:]:
     if img_m:
         image = img_m.group(1)
 
-    # Link
     link = ""
     link_m = re.search(r'href="(https://[^"]*mercadolivre[^"]*MLB[^"]*)"', block)
     if not link_m:
@@ -116,7 +126,7 @@ for block in blocks[1:]:
     if not link_m:
         link_m = re.search(r'href="(https://(?:produto|www)\.mercadolivre\.com\.br[^"]*)"', block)
     if link_m:
-        link = link_m.group(1).split('?')[0]  # clean tracking params
+        link = link_m.group(1).split('#')[0].split('?')[0]
 
     products.append({
         "name": name, "price": price, "rating": rating,
@@ -143,44 +153,277 @@ print(json.dumps(products, ensure_ascii=False))
   });
 }
 
-async function main() {
-  const all: MeliProduct[] = [];
+type DetailResult = {
+  images: string[];
+  price: string;
+  original_price: string;
+  skus: MeliSku[];
+};
 
-  // Mercado Livre: sorted by best sellers (_OrderId_PRICE*QUANTITY_DESC or relevance)
-  // Pagination: Desde_51, Desde_101, etc.
-  for (let offset = 0; offset < 350; offset += 50) {
-    const url =
-      offset === 0
-        ? "https://lista.mercadolivre.com.br/furadeira-eletrica_OrderId_PRICE*QUANTITY_DESC"
-        : `https://lista.mercadolivre.com.br/furadeira-eletrica_Desde_${offset + 1}_OrderId_PRICE*QUANTITY_DESC`;
-    console.log(`[MeLi] Offset ${offset}...`);
-    try {
-      const html = await curlFetch(url);
-      const products = await parseProducts(html);
-      console.log(`  Found ${products.length} products (total: ${all.length + products.length})`);
-      all.push(...products);
-      if (all.length >= 300) {
-        break;
+function parseDetailPage(html: string): Promise<DetailResult | null> {
+  const script = String.raw`
+import json, sys, re
+
+html = sys.stdin.read()
+result = {"images": [], "price": "", "original_price": "", "skus": []}
+
+# Extract pictures from embedded JSON: "pictures":[{...}]
+pics_m = re.search(r'"pictures":\[(.*?)\]', html)
+if pics_m:
+    try:
+        pics = json.loads("[" + pics_m.group(1) + "]")
+        # Find gallery template
+        tmpl_m = re.search(r'"template":"(https:[^"]*\{id\}[^"]*)"', html)
+        template = ""
+        if tmpl_m:
+            template = tmpl_m.group(1).replace(r'\u002F', '/')
+
+        for pic in pics:
+            pid = pic.get("id", "")
+            sanitized = pic.get("sanitized_title", "")
+            if template and pid:
+                url = template.replace("{id}", pid).replace("{sanitizedTitle}", sanitized)
+                result["images"].append(url)
+            elif pid:
+                # Fallback: construct URL directly
+                result["images"].append(f"https://http2.mlstatic.com/D_NQ_NP_{pid}-F{sanitized}.webp")
+    except Exception:
+        pass
+
+# If no pictures from JSON, try finding image URLs directly
+if not result["images"]:
+    img_urls = re.findall(r'https://http2\.mlstatic\.com/D_NQ_NP_2X_[^"]+\.webp', html)
+    result["images"] = list(dict.fromkeys(img_urls))[:20]
+
+# Extract price from JSON
+price_m = re.search(r'"price":\{"(?:component_id[^}]*,)?"type":"price","value":(\d+(?:\.\d+)?)', html)
+if not price_m:
+    price_m = re.search(r'"price":\{[^}]*"value":(\d+(?:\.\d+)?)', html)
+if price_m:
+    val = float(price_m.group(1))
+    result["price"] = f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+# Original price
+orig_m = re.search(r'"original_value":(\d+(?:\.\d+)?)', html)
+if orig_m:
+    val = float(orig_m.group(1))
+    result["original_price"] = f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+# Extract SKU variations
+# Look for picker/variation data
+# MeLi uses "variations" in embedded state or "picker" components
+var_blocks = re.findall(r'"label":\{"text":"([^"]+)"[^}]*\}[^}]*"price":\{[^}]*"value":(\d+(?:\.\d+)?)', html)
+seen_skus = set()
+for label, price_val in var_blocks:
+    key = f"{label}:{price_val}"
+    if key not in seen_skus:
+        seen_skus.add(key)
+        val = float(price_val)
+        price_str = f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        result["skus"].append({"name": label, "price": price_str})
+
+# Also look for attribute-based variations
+attr_blocks = re.findall(r'"attribute_combinations":\[(\{[^]]+)\]', html)
+for attr_block in attr_blocks[:10]:
+    try:
+        attrs = json.loads("[" + attr_block + "]")
+        for attr in attrs:
+            name = attr.get("value_name", "")
+            if name and name not in seen_skus:
+                seen_skus.add(name)
+                result["skus"].append({"name": name, "price": ""})
+    except Exception:
+        pass
+
+print(json.dumps(result, ensure_ascii=False))
+`;
+  return new Promise((resolve) => {
+    const child = execFile("python3", ["-c", script], { maxBuffer: 20_000_000 }, (err, stdout) => {
+      if (err) {
+        resolve(null);
+        return;
       }
-      await new Promise((r) => setTimeout(r, 1500));
-    } catch (e: unknown) {
-      console.log(`  Error: ${String(e)}`);
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        resolve(null);
+      }
+    });
+    child.stdin?.write(html);
+    child.stdin?.end();
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function main() {
+  // ── Phase 1: Collect product links from search pages ──
+  console.log("═══ Phase 1: Search pages ═══\n");
+  const searchResults: SearchResult[] = [];
+
+  // Multiple search queries to maximize unique products
+  const queries = [
+    "furadeira-eletrica",
+    "furadeira-de-impacto",
+    "parafusadeira-furadeira",
+    "furadeira-profissional",
+    "martelete-furadeira",
+    "furadeira-bateria",
+  ];
+
+  for (const query of queries) {
+    for (let offset = 0; offset < 200; offset += 50) {
+      const url =
+        offset === 0
+          ? `https://lista.mercadolivre.com.br/${query}_OrderId_PRICE*QUANTITY_DESC`
+          : `https://lista.mercadolivre.com.br/${query}_Desde_${offset + 1}_OrderId_PRICE*QUANTITY_DESC`;
+      console.log(`[MeLi] "${query}" offset ${offset}...`);
+      try {
+        const html = await curlFetch(url);
+        const products = await parseSearchResults(html);
+        console.log(
+          `  Found ${products.length} products (total: ${searchResults.length + products.length})`,
+        );
+        searchResults.push(...products);
+        await sleep(1500);
+      } catch (e: unknown) {
+        console.log(`  Error: ${String(e)}`);
+      }
+    }
+    // Early exit if we have enough raw results
+    if (searchResults.length >= 1500) {
+      break;
     }
   }
 
-  // Dedup by link
+  // Dedup by cleaned link, then by name for tracking links
   const seen = new Set<string>();
-  const unique = all.filter((p) => {
-    const key = p.link || p.name;
+  const uniqueSearch = searchResults.filter((p) => {
+    // Skip tracking/redirect links for dedup key — use name instead
+    const isTrackingLink = !p.link || p.link.includes("click1.mercadolivre");
+    const key = isTrackingLink ? p.name.toLowerCase().trim() : p.link;
     if (seen.has(key)) {
       return false;
     }
     seen.add(key);
+    // Also dedup by name to catch same product from different queries
+    const nameKey = p.name.toLowerCase().trim();
+    if (seen.has(nameKey)) {
+      return false;
+    }
+    seen.add(nameKey);
     return true;
   });
 
-  writeFileSync("/tmp/meli-drills.json", JSON.stringify(unique.slice(0, 300), null, 2));
-  console.log(`[MeLi] Done: ${unique.length} unique products saved`);
+  const targets = uniqueSearch.slice(0, 300);
+  console.log(`\nPhase 1 done: ${targets.length} unique products\n`);
+
+  // ── Phase 2: Fetch detail pages for images + SKU ──
+  console.log("═══ Phase 2: Detail pages ═══\n");
+  const results: MeliProduct[] = [];
+  let detailOk = 0;
+  let detailFail = 0;
+
+  for (let i = 0; i < targets.length; i++) {
+    const item = targets[i];
+    if (!item.link || item.link.includes("click1.mercadolivre")) {
+      // Skip tracking/redirect links that won't have product pages
+      results.push({
+        name: item.name,
+        price: item.price,
+        original_price: "",
+        rating: item.rating,
+        reviews: item.reviews,
+        sold: item.sold,
+        images: item.image ? [item.image] : [],
+        link: item.link,
+        skus: [],
+      });
+      continue;
+    }
+
+    // Clean the URL
+    const cleanUrl = item.link.split("#")[0].split("?")[0];
+
+    try {
+      const html = await curlFetch(cleanUrl);
+
+      if (html.length < 10000) {
+        // Too small, likely error page
+        results.push({
+          name: item.name,
+          price: item.price,
+          original_price: "",
+          rating: item.rating,
+          reviews: item.reviews,
+          sold: item.sold,
+          images: item.image ? [item.image] : [],
+          link: item.link,
+          skus: [],
+        });
+        detailFail++;
+        continue;
+      }
+
+      const detail = await parseDetailPage(html);
+      if (detail) {
+        results.push({
+          name: item.name,
+          price: detail.price || item.price,
+          original_price: detail.original_price,
+          rating: item.rating,
+          reviews: item.reviews,
+          sold: item.sold,
+          images: detail.images.length > 0 ? detail.images : item.image ? [item.image] : [],
+          link: item.link,
+          skus: detail.skus,
+        });
+        detailOk++;
+        if ((i + 1) % 20 === 0 || i === targets.length - 1) {
+          console.log(
+            `  [${i + 1}/${targets.length}] ${detailOk} ok, ${detailFail} fail | last: ${detail.images.length} imgs, ${detail.skus.length} skus`,
+          );
+        }
+      } else {
+        results.push({
+          name: item.name,
+          price: item.price,
+          original_price: "",
+          rating: item.rating,
+          reviews: item.reviews,
+          sold: item.sold,
+          images: item.image ? [item.image] : [],
+          link: item.link,
+          skus: [],
+        });
+        detailFail++;
+      }
+    } catch {
+      results.push({
+        name: item.name,
+        price: item.price,
+        original_price: "",
+        rating: item.rating,
+        reviews: item.reviews,
+        sold: item.sold,
+        images: item.image ? [item.image] : [],
+        link: item.link,
+        skus: [],
+      });
+      detailFail++;
+    }
+
+    await sleep(2000);
+  }
+
+  writeFileSync("/tmp/meli-drills.json", JSON.stringify(results, null, 2));
+  const avgImages = results.reduce((s, p) => s + p.images.length, 0) / results.length;
+  const withSkus = results.filter((p) => p.skus.length > 0).length;
+  console.log(
+    `\n[MeLi] Done: ${results.length} products | avg ${avgImages.toFixed(1)} images/product | ${withSkus} with SKUs`,
+  );
 }
 
 main().catch(console.error);
