@@ -179,6 +179,25 @@ with Camoufox(headless=True, humanize=True) as browser:
     )
     page = context.new_page()
 
+    # Block images, fonts, media, and tracking scripts to save bandwidth (~60-70%)
+    def handle_route(route):
+        url = route.request.url
+        rtype = route.request.resource_type
+        # Block images, fonts, media, stylesheets
+        if rtype in ("image", "font", "media", "stylesheet"):
+            route.abort()
+            return
+        # Block known tracking/analytics domains
+        blocked = ("google-analytics", "googletagmanager", "facebook.net",
+                   "doubleclick", "amazon-adsystem", "fls-na.amazon",
+                   "unagi.amazon", "completion.amazon")
+        if any(b in url for b in blocked):
+            route.abort()
+            return
+        route.continue_()
+
+    page.route("**/*", handle_route)
+
     for idx, asin in enumerate(asins):
         url = f"https://www.amazon.com.br/dp/{asin}"
         try:
