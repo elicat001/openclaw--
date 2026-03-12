@@ -19,6 +19,10 @@ export type DomainProfile = {
   requiresCookies: boolean;
   /** Preferred proxy tier for this domain. */
   proxyTier?: "residential" | "datacenter" | "any";
+  /** Whether this domain requires authenticated login to access search/content. */
+  requiresAuth?: boolean;
+  /** Platform identifier for account pool lookup (e.g. "temu", "shein", "shopee"). */
+  loginPlatform?: string;
 };
 
 // ── Known anti-bot domains ────────────────────────────────────────
@@ -31,6 +35,8 @@ const KNOWN_DOMAIN_PROFILES: DomainProfile[] = [
     warmupPath: "/",
     requiresCookies: true,
     proxyTier: "residential",
+    requiresAuth: true,
+    loginPlatform: "shopee",
   },
   {
     patterns: ["lazada.*", "*.lazada.*"],
@@ -111,6 +117,26 @@ const KNOWN_DOMAIN_PROFILES: DomainProfile[] = [
     warmupPath: "/",
     requiresCookies: true,
     proxyTier: "residential",
+  },
+  {
+    patterns: ["temu.com", "*.temu.com"],
+    defaultMode: "camoufox_stealth",
+    crawlProfile: "conservative",
+    warmupPath: "/",
+    requiresCookies: true,
+    proxyTier: "residential",
+    requiresAuth: true,
+    loginPlatform: "temu",
+  },
+  {
+    patterns: ["shein.com", "*.shein.com"],
+    defaultMode: "camoufox_stealth",
+    crawlProfile: "conservative",
+    warmupPath: "/",
+    requiresCookies: true,
+    proxyTier: "residential",
+    requiresAuth: true,
+    loginPlatform: "shein",
   },
 ];
 
