@@ -210,17 +210,39 @@ function analyzeMarketOverview(products: CleanedProduct[]): string {
 function analyzePricing(products: CleanedProduct[]): string {
   const valid = products.filter((p) => p.price_numeric > 0 && !p.price_suspect);
 
-  // Price distribution buckets
-  const buckets = [
-    { label: "R$ 0-50", min: 0, max: 50 },
-    { label: "R$ 50-100", min: 50, max: 100 },
-    { label: "R$ 100-200", min: 100, max: 200 },
-    { label: "R$ 200-400", min: 200, max: 400 },
-    { label: "R$ 400-700", min: 400, max: 700 },
-    { label: "R$ 700-1000", min: 700, max: 1000 },
-    { label: "R$ 1000-2000", min: 1000, max: 2000 },
-    { label: "R$ 2000+", min: 2000, max: 999999 },
-  ];
+  // Data-driven price distribution buckets based on actual price range
+  const prices = valid.map((p) => p.price_numeric).toSorted((a, b) => a - b);
+  const minPrice = prices[0] || 0;
+  const maxPrice = prices[prices.length - 1] || 1000;
+
+  function buildBuckets(
+    min: number,
+    max: number,
+  ): Array<{ label: string; min: number; max: number }> {
+    // Round to nice numbers
+    const nice = (v: number): number => {
+      if (v <= 10) return Math.ceil(v / 5) * 5;
+      if (v <= 100) return Math.ceil(v / 10) * 10;
+      if (v <= 1000) return Math.ceil(v / 50) * 50;
+      return Math.ceil(v / 100) * 100;
+    };
+
+    const range = max - min;
+    const step = nice(range / 6);
+    const start = Math.floor(min / step) * step;
+    const result: Array<{ label: string; min: number; max: number }> = [];
+
+    for (let i = start; i < max + step; i += step) {
+      const lo = i;
+      const hi = i + step;
+      if (lo >= max * 1.5) break;
+      const label = hi > max * 1.2 ? `R$ ${lo}+` : `R$ ${lo}-${hi}`;
+      result.push({ label, min: lo, max: hi > max * 1.2 ? 999999 : hi });
+    }
+    return result.length > 0 ? result : [{ label: `R$ 0+`, min: 0, max: 999999 }];
+  }
+
+  const buckets = buildBuckets(minPrice, maxPrice);
 
   const bucketCounts = buckets.map((b) => ({
     ...b,
@@ -728,46 +750,220 @@ function analyzeFBA(_products: CleanedProduct[]): string {
   return md;
 }
 
-function analyzeSeasonality(_products: CleanedProduct[]): string {
-  return `## 8. Seasonality & Market Trends
+function analyzeSeasonality(products: CleanedProduct[]): string {
+  const category = inferCategory(products);
+
+  // Category-aware marketing dates
+  const marketingDates: Record<
+    string,
+    Array<{ event: string; timing: string; lift: string; strategy: string }>
+  > = {
+    default: [
+      {
+        event: "Black Friday",
+        timing: "Last week of Nov",
+        lift: "+80-120%",
+        strategy: "Stock up 1 month ahead, discount 20-30%",
+      },
+      {
+        event: "Natal (Christmas)",
+        timing: "December",
+        lift: "+30-50%",
+        strategy: "Bundle promotions, gift packaging",
+      },
+      {
+        event: "Dia das Mães (Mother's Day)",
+        timing: "2nd Sunday of May",
+        lift: "+40-60%",
+        strategy: "Gift sets, promotional bundles",
+      },
+      {
+        event: "Dia dos Namorados (Valentine's)",
+        timing: "June 12",
+        lift: "+20-40%",
+        strategy: "Gift-oriented promotions",
+      },
+    ],
+  };
+
+  // Detect category-specific dates
+  const lower = category.toLowerCase();
+  const isTools =
+    lower.includes("furadeira") || lower.includes("parafusadeira") || lower.includes("martelete");
+  const isBaby =
+    lower.includes("mamadeira") ||
+    lower.includes("beb") ||
+    lower.includes("baby") ||
+    products.some((p) => /mamadeira|chupeta|bico.*beb/i.test(p.name));
+
+  let dates = marketingDates.default;
+  let seasonNotes: Array<{ month: string; demand: number; note: string }>;
+  let trendInsight: string;
+  let afterSalesNote: string;
+
+  if (isTools) {
+    dates = [
+      {
+        event: "Black Friday",
+        timing: "Last week of Nov",
+        lift: "+80-120%",
+        strategy: "Stock up 1 month ahead, discount 20-30%",
+      },
+      {
+        event: "Dia dos Pais (Father's Day)",
+        timing: "2nd Sunday of Aug",
+        lift: "+40-60%",
+        strategy: "Tools are popular gifts, promote 2 weeks early",
+      },
+      {
+        event: "Natal (Christmas)",
+        timing: "December",
+        lift: "+30-50%",
+        strategy: "Bundle promotions, gift packaging",
+      },
+      {
+        event: "Dia do Trabalhador (Labor Day)",
+        timing: "May 1",
+        lift: "+20-30%",
+        strategy: "Tool-category promotions",
+      },
+      {
+        event: "Construction season",
+        timing: "Oct-Mar",
+        lift: "+20-40%",
+        strategy: "Sustained ad spend, professional-grade products",
+      },
+    ];
+    seasonNotes = [
+      { month: "Jan", demand: 80, note: "Summer end / construction restarts" },
+      { month: "Feb", demand: 80, note: "Pre-Carnival rush" },
+      { month: "Mar", demand: 70, note: "Rainy season, indoor projects" },
+      { month: "Apr", demand: 60, note: "Autumn" },
+      { month: "May", demand: 60, note: "Pre-winter prep" },
+      { month: "Jun", demand: 50, note: "Winter low" },
+      { month: "Jul", demand: 50, note: "Winter low" },
+      { month: "Aug", demand: 60, note: "Recovery begins + Dia dos Pais" },
+      { month: "Sep", demand: 70, note: "Spring renovation season" },
+      { month: "Oct", demand: 80, note: "Peak season starts" },
+      { month: "Nov", demand: 100, note: "Black Friday + peak" },
+      { month: "Dec", demand: 90, note: "Christmas / year-end rush" },
+    ];
+    trendInsight =
+      "Brazil e-commerce grows 20%+/year. The tool segment benefits from rising DIY culture and construction activity. Cordless/lithium-ion products are gaining share year over year.";
+    afterSalesNote = "Power tools have high return rates; local support needed";
+  } else if (isBaby) {
+    dates = [
+      {
+        event: "Black Friday",
+        timing: "Last week of Nov",
+        lift: "+80-120%",
+        strategy: "Stock up 1 month ahead, discount 20-30%",
+      },
+      {
+        event: "Dia das Mães (Mother's Day)",
+        timing: "2nd Sunday of May",
+        lift: "+60-80%",
+        strategy: "Baby gift sets, bundle with accessories",
+      },
+      {
+        event: "Dia das Crianças (Children's Day)",
+        timing: "October 12",
+        lift: "+50-70%",
+        strategy: "Promote 2 weeks early, combo deals",
+      },
+      {
+        event: "Natal (Christmas)",
+        timing: "December",
+        lift: "+40-60%",
+        strategy: "Gift packaging, premium bundles",
+      },
+      {
+        event: "Chá de Bebê season",
+        timing: "Year-round",
+        lift: "+10-20%",
+        strategy: "Gift-registry friendly bundles",
+      },
+    ];
+    seasonNotes = [
+      { month: "Jan", demand: 70, note: "Post-holiday normalization" },
+      { month: "Feb", demand: 70, note: "Back to routine" },
+      { month: "Mar", demand: 75, note: "Steady demand" },
+      { month: "Apr", demand: 80, note: "Pre-Mother's Day buildup" },
+      { month: "May", demand: 90, note: "Dia das Mães peak" },
+      { month: "Jun", demand: 70, note: "Winter, indoor care" },
+      { month: "Jul", demand: 70, note: "Winter steady" },
+      { month: "Aug", demand: 75, note: "Recovery" },
+      { month: "Sep", demand: 80, note: "Pre-Children's Day" },
+      { month: "Oct", demand: 90, note: "Dia das Crianças peak" },
+      { month: "Nov", demand: 100, note: "Black Friday + peak" },
+      { month: "Dec", demand: 95, note: "Christmas / year-end rush" },
+    ];
+    trendInsight =
+      "Brazil e-commerce grows 20%+/year. Baby products benefit from rising online purchasing trust and brand-conscious parenting. Anti-colic and BPA-free features are key purchase drivers.";
+    afterSalesNote =
+      "Baby products require strict safety compliance (INMETRO); quality issues damage brand reputation severely";
+  } else {
+    seasonNotes = [
+      { month: "Jan", demand: 70, note: "Post-holiday normalization" },
+      { month: "Feb", demand: 70, note: "Pre-Carnival" },
+      { month: "Mar", demand: 70, note: "Steady demand" },
+      { month: "Apr", demand: 65, note: "Autumn" },
+      { month: "May", demand: 75, note: "Dia das Mães" },
+      { month: "Jun", demand: 60, note: "Winter low" },
+      { month: "Jul", demand: 60, note: "Winter low" },
+      { month: "Aug", demand: 65, note: "Recovery" },
+      { month: "Sep", demand: 70, note: "Spring" },
+      { month: "Oct", demand: 80, note: "Dia das Crianças" },
+      { month: "Nov", demand: 100, note: "Black Friday + peak" },
+      { month: "Dec", demand: 90, note: "Christmas / year-end rush" },
+    ];
+    trendInsight =
+      "Brazil e-commerce grows 20%+/year. Focus on quality differentiation and brand building for sustained growth.";
+    afterSalesNote = "Returns and after-sales service quality affect brand reputation and reviews";
+  }
+
+  // Build seasonality chart
+  const maxDemand = Math.max(...seasonNotes.map((s) => s.demand));
+  let chart = "";
+  for (const s of seasonNotes) {
+    const filled = Math.round((s.demand / maxDemand) * 10);
+    const bar = "\u2588".repeat(filled) + "\u2591".repeat(10 - filled);
+    chart += `${s.month.padEnd(10)} ${bar}  ${String(s.demand).padStart(3)}%  ${s.note}\n`;
+  }
+
+  let md = `## 8. Seasonality & Market Trends
 
 ### Brazil Market Seasonality
 
 \`\`\`
 Month      Demand     Notes
-Jan        ████████░░  80%  Summer end / construction restarts
-Feb        ████████░░  80%  Pre-Carnival rush
-Mar        ███████░░░  70%  Rainy season, indoor projects
-Apr        ██████░░░░  60%  Autumn
-May        ██████░░░░  60%  Pre-winter prep
-Jun        █████░░░░░  50%  Winter low
-Jul        █████░░░░░  50%  Winter low
-Aug        ██████░░░░  60%  Recovery begins
-Sep        ███████░░░  70%  Spring renovation season
-Oct        ████████░░  80%  Peak season starts
-Nov        ██████████  100% Black Friday + peak
-Dec        █████████░  90%  Christmas / year-end rush
-\`\`\`
+${chart}\`\`\`
 
 ### Key Marketing Dates
 
 | Event | Timing | Expected Lift | Recommended Strategy |
 |:------|:-------|:-------------|:---------------------|
-| Black Friday | Last week of Nov | +80-120% | Stock up 1 month ahead, discount 20-30% |
-| Dia dos Pais (Father's Day) | 2nd Sunday of Aug | +40-60% | Tools are popular gifts, promote 2 weeks early |
-| Natal (Christmas) | December | +30-50% | Bundle promotions, gift packaging |
-| Dia do Trabalhador (Labor Day) | May 1 | +20-30% | Tool-category promotions |
-| Construction season | Oct-Mar | +20-40% | Sustained ad spend, professional-grade products |
+`;
 
+  for (const d of dates) {
+    md += `| ${d.event} | ${d.timing} | ${d.lift} | ${d.strategy} |\n`;
+  }
+
+  md += `
 ### New vs Long-tail Product Signals
 
 - **New listings**: Many images (>8), no reviews, higher pricing, weak brand recognition -> needs promotion investment
 - **Long-tail listings**: Few images, many reviews (>100), stable pricing, known brands -> steady organic traffic
 - **Recommendation**: Launch new products 2-3 months before peak season to accumulate reviews
 
-> **Trend insight**: Brazil e-commerce grows 20%+/year. The tool segment benefits from rising DIY culture and construction activity. Cordless/lithium-ion products are gaining share year over year.
+> **Trend insight**: ${trendInsight}
 
 `;
+
+  // Store afterSalesNote for selection matrix (attach to products context)
+  (analyzeSeasonality as { afterSalesNote?: string }).afterSalesNote = afterSalesNote;
+
+  return md;
 }
 
 function analyzeSelectionMatrix(products: CleanedProduct[]): string {
@@ -855,7 +1051,7 @@ function analyzeSelectionMatrix(products: CleanedProduct[]): string {
 | Brand recognition | Very High | New brands need 6-12 months of sustained investment |
 | Price wars | Medium | Differentiate on features/quality rather than price |
 | Logistics speed | Medium | FBA is the baseline expectation |
-| After-sales service | High | Power tools have high return rates; local support needed |
+| After-sales service | High | ${(analyzeSeasonality as { afterSalesNote?: string }).afterSalesNote || "Returns and after-sales service quality affect brand reputation"} |
 
 > **Selection summary**:
 > 1. Low-competition segments (blue ocean) offer the best entry opportunities

@@ -99,9 +99,19 @@ for i in range(1, len(parts), 2):
         rating = rating_m.group(1)
 
     reviews = ""
-    rev_m = re.search(r'<span[^>]*class="[^"]*s-underline-text[^"]*"[^>]*>([\d,]+)', block)
-    if rev_m:
-        reviews = rev_m.group(1)
+    # Multiple patterns for review count extraction (US DOM varies)
+    rev_patterns = [
+        r'<span[^>]*class="[^"]*s-underline-text[^"]*"[^>]*>([\d,]+)',
+        r'aria-label="[^"]*(\d[\d,]+)\s+ratings?"',
+        r'href="[^"]*#customerReviews[^"]*"[^>]*>([\d,]+)',
+        r'(\d[\d,]+)\s+ratings?',
+        r'a-size-base[^>]*>([\d,]+)\s*$',
+    ]
+    for pat in rev_patterns:
+        rev_m = re.search(pat, block)
+        if rev_m:
+            reviews = rev_m.group(1)
+            break
 
     image = ""
     img_m = re.search(r'<img[^>]*class="s-image"[^>]*src="([^"]+)"', block)

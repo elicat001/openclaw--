@@ -59,21 +59,51 @@ function identifyBrand(name: string, brands: BrandEntry[]): { brand: string; ori
 
   // 2. First-word extraction for unknown brands
   const productWords = new Set([
+    // Tools / drills
     "FURADEIRA",
     "PARAFUSADEIRA",
     "MARTELETE",
-    "KIT",
-    "JOGO",
     "CHAVE",
+    "BRUSHLESS",
+    "ELETROPNEUMÁTICO",
+    "ELETROPNEUMATICO",
+    // Baby products
+    "MAMADEIRA",
+    "MAMADEIRAS",
+    "BONECA",
+    "BONECO",
+    "BICO",
+    "BICOS",
+    "POTE",
+    "COPO",
+    "BOLSA",
+    "BOLSAS",
+    "AQUECEDOR",
+    "ESTERILIZADOR",
+    "CHUPETA",
+    "BABADOR",
+    // Kitchen / home
+    "PANELA",
+    "FRIGIDEIRA",
+    "CAFETEIRA",
+    "LIQUIDIFICADOR",
+    "ASPIRADOR",
+    // Electronics
+    "FONE",
+    "CABO",
+    "CARREGADOR",
+    "CAIXA",
+    // Generic product/marketing words
+    "KIT",
+    "KITS",
+    "JOGO",
     "CONJUNTO",
+    "CONJ",
     "MINI",
     "SUPER",
     "NOVA",
     "NOVO",
     "PRO",
-    "BRUSHLESS",
-    "ELETROPNEUMÁTICO",
-    "ELETROPNEUMATICO",
     "THE",
     "NEW",
     "BEST",
@@ -82,6 +112,9 @@ function identifyBrand(name: string, brands: BrandEntry[]): { brand: string; ori
     "PACK",
     "CASE",
     "BOX",
+    "PAR",
+    "POTE",
+    "ALÇA",
   ]);
   const firstWord = name
     .split(/[\s,]+/)[0]
@@ -240,6 +273,42 @@ function classifyProductGeneric(name: string): {
     }
   }
 
+  // Weight estimation based on product name keywords
+  let weight_estimate_kg = 0.5; // Default for small consumer goods
+  const weightKeywords: Array<[RegExp, number]> = [
+    // Baby products
+    [/mamadeira|bottle|bico/i, 0.2],
+    [/kit.*mamadeira|kit.*bottle/i, 0.5],
+    [/esterilizador|sterilizer/i, 1.0],
+    [/aquecedor/i, 0.8],
+    [/chupeta|pacifier/i, 0.05],
+    // Electronics
+    [/fone|earphone|headphone/i, 0.3],
+    [/carregador|charger/i, 0.2],
+    [/tablet/i, 0.6],
+    [/notebook|laptop/i, 2.5],
+    // Kitchen
+    [/panela|frigideira|pot|pan/i, 1.5],
+    [/cafeteira|coffee\s*maker/i, 2.0],
+    [/liquidificador|blender/i, 2.0],
+    // Home
+    [/aspirador|vacuum/i, 3.0],
+    [/ventilador|fan/i, 3.0],
+    // Small accessories
+    [/cabo|cable|capa|case|cover/i, 0.1],
+    [/bolsa|bag/i, 0.8],
+    // Toys
+    [/boneca|boneco|doll/i, 0.8],
+    [/brinquedo|toy/i, 0.5],
+  ];
+
+  for (const [pattern, weight] of weightKeywords) {
+    if (pattern.test(lower)) {
+      weight_estimate_kg = weight;
+      break;
+    }
+  }
+
   return {
     type: "generic",
     power_source: "",
@@ -248,7 +317,7 @@ function classifyProductGeneric(name: string): {
     chuck_size: "",
     is_professional: false,
     has_case: false,
-    weight_estimate_kg: 0,
+    weight_estimate_kg,
   };
 }
 

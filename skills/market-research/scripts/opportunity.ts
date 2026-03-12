@@ -239,11 +239,18 @@ function loadBRData(dirPath: string): { products: BRProduct[]; isCleaned: boolea
 // ── Strategy A: US Hot x BR Blank ──
 
 function analyzeStrategyA(usProducts: RawProduct[], brProducts: BRProduct[]): OpportunityA[] {
-  // Filter US hot sellers: reviews > 500 AND rating >= 4.0
+  // Dynamic threshold: use p75 of review counts (adaptive to category size)
+  const allReviewCounts = usProducts
+    .map((p) => parseReviewCount(p.reviews ?? "0"))
+    .filter((r) => r > 0);
+  const reviewThreshold =
+    allReviewCounts.length > 0 ? Math.max(percentile(allReviewCounts, 75), 20) : 500;
+
+  // Filter US hot sellers using dynamic threshold AND rating >= 4.0
   const hotSellers = usProducts.filter((p) => {
     const reviews = parseReviewCount(p.reviews ?? "0");
     const rating = parseFloat(p.rating ?? "0") || 0;
-    return reviews > 500 && rating >= 4.0;
+    return reviews >= reviewThreshold && rating >= 4.0;
   });
 
   const opportunities: OpportunityA[] = [];
@@ -315,7 +322,7 @@ function analyzeStrategyA(usProducts: RawProduct[], brProducts: BRProduct[]): Op
 
 // ── Strategy B: BR Slow Sellers x Price Gap ──
 
-function analyzeStrategyB(brProducts: BRProduct[]): OpportunityB[] {
+function analyzeStrategyB(brProducts: BRProduct[], category?: string): OpportunityB[] {
   // Group by source to compute per-source statistics
   const bySource = new Map<string, BRProduct[]>();
   for (const p of brProducts) {
@@ -381,11 +388,12 @@ function analyzeStrategyB(brProducts: BRProduct[]): OpportunityB[] {
     // Suggested price: bestseller median * 0.85
     const suggestedPrice = stats.bestsellerMedian * 0.85;
 
-    // Estimate cost at suggested price
+    // Estimate cost at suggested price (with category for duty rate)
     const costInput = {
       price_numeric: p.price_numeric,
       supply_chain: p.supply_chain,
       weight_estimate_kg: p.weight_estimate_kg,
+      category,
     };
     const costEst = estimateCostAtPrice(suggestedPrice, costInput);
 
@@ -448,7 +456,7 @@ function generateReport(
   lines.push("## A. US Hot Sellers \u00D7 Brazil Market Gap");
   lines.push("");
   lines.push(
-    "**Methodology**: Products with 500+ reviews and 4.0+ rating on Amazon US, cross-referenced against Brazil market presence.",
+    "**Methodology**: Products in the top quartile of reviews and 4.0+ rating on Amazon US, cross-referenced against Brazil market presence.",
   );
   lines.push("");
 
@@ -516,7 +524,7 @@ function generateReport(
   lines.push("");
   lines.push("- Factory cost: based on supply chain origin heuristics (confidence: medium)");
   lines.push("- Shipping: R$8/kg sea freight average");
-  lines.push("- Import duty: 60% (ICMS + II for electronics/tools)");
+  lines.push("- Import duty: category-aware rates (20-60% ICMS + II)");
   lines.push("- FBA: weight-based tier pricing");
   lines.push("- Platform commission: 16%");
   lines.push("- **Calibrate with 1688 data for higher confidence**");
@@ -533,6 +541,7 @@ function main() {
       "us-data": { type: "string" },
       "br-data": { type: "string" },
       output: { type: "string" },
+      category: { type: "string" },
     },
     strict: true,
   });
@@ -558,6 +567,7 @@ function main() {
   }
 
   const outputPath = values.output ?? join(brDataDir, "opportunity-report.md");
+  const category = values.category;
 
   console.log(`Loading US data from ${usDataPath}...`);
   const usProducts = loadUSData(usDataPath);
@@ -566,6 +576,9 @@ function main() {
   console.log(`Loading BR data from ${brDataDir}...`);
   const { products: brProducts, isCleaned } = loadBRData(brDataDir);
   console.log(`  -> ${brProducts.length} BR products loaded (${isCleaned ? "cleaned" : "raw"})`);
+  if (category) {
+    console.log(`  Category: ${category}`);
+  }
 
   console.log("\nRunning Strategy A: US Hot Sellers x BR Blank...");
   const oppsA = analyzeStrategyA(usProducts, brProducts);
@@ -575,7 +588,7 @@ function main() {
   console.log(`     Level 1: ${oppsA.filter((o) => o.level === 1).length}`);
 
   console.log("\nRunning Strategy B: BR Slow Sellers x Price Gap...");
-  const oppsB = analyzeStrategyB(brProducts);
+  const oppsB = analyzeStrategyB(brProducts, category);
   console.log(`  -> ${oppsB.length} opportunities found`);
   console.log(`     Level 3: ${oppsB.filter((o) => o.level === 3).length}`);
   console.log(`     Level 2: ${oppsB.filter((o) => o.level === 2).length}`);

@@ -21,6 +21,7 @@ const { values } = parseArgs({
     pipeline: { type: "string", default: "crawl" },
     country: { type: "string", default: "br" },
     proxy: { type: "string" },
+    category: { type: "string" },
   },
   strict: true,
 });
@@ -50,6 +51,7 @@ const slug = keyword
 const outputDir = values["output-dir"] ?? `/tmp/market-research-${slug}`;
 const pipeline = values.pipeline ?? "crawl";
 const country = values.country ?? "br";
+const category = values.category;
 
 // ── Crawler Registry ──
 
@@ -140,20 +142,20 @@ async function runOpportunity(): Promise<void> {
   const opportunityScript = new URL("./opportunity.ts", import.meta.url).pathname;
   const reportPath = `${outputDir}/opportunity-report.md`;
   console.log(`\n═══ Running Opportunity Analysis ═══\n`);
-  execFileSync(
-    "pnpm",
-    [
-      "tsx",
-      opportunityScript,
-      "--us-data",
-      usDataPath,
-      "--br-data",
-      outputDir,
-      "--output",
-      reportPath,
-    ],
-    { stdio: "inherit" },
-  );
+  const oppArgs = [
+    "tsx",
+    opportunityScript,
+    "--us-data",
+    usDataPath,
+    "--br-data",
+    outputDir,
+    "--output",
+    reportPath,
+  ];
+  if (category) {
+    oppArgs.push("--category", category);
+  }
+  execFileSync("pnpm", oppArgs, { stdio: "inherit" });
 }
 
 // ── Main ──

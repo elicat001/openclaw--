@@ -246,15 +246,9 @@ print(json.dumps(result, ensure_ascii=False))
 
 // ── Query generation ──
 
-const VARIANT_SUFFIXES = ["-profissional", "-bateria"];
-
 function buildQueries(keyword: string): string[] {
   const base = keyword.trim().replace(/\s+/g, "-");
-  const queries = [base];
-  for (const suffix of VARIANT_SUFFIXES) {
-    queries.push(base + suffix);
-  }
-  return queries;
+  return [base];
 }
 
 // ── Dedup helpers ──

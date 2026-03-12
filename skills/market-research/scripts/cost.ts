@@ -27,6 +27,7 @@ export type CostInput = {
   price_numeric: number;
   supply_chain: string;
   weight_estimate_kg: number;
+  category?: string; // Product category for duty rate selection
 };
 
 // Factory cost ratio by supply chain origin (percentage of selling price)
@@ -41,8 +42,28 @@ const FACTORY_COST_RATIOS: Record<string, number> = {
 // Shipping cost per kg (sea freight China->Brazil, averaged)
 const SHIPPING_PER_KG_BRL = 8.0;
 
-// Brazilian import duty rate (ICMS + II for electronics/tools)
-const IMPORT_DUTY_RATE = 0.6;
+// Brazilian import duty rates by category (ICMS + II combined effective rate)
+const IMPORT_DUTY_RATES: Record<string, number> = {
+  electronics: 0.6, // Electronics, tools, power equipment
+  tools: 0.6,
+  baby: 0.2, // Baby products, feeding accessories
+  clothing: 0.35, // Apparel, textiles
+  cosmetics: 0.45, // Beauty, personal care
+  food: 0.25, // Food, supplements
+  toys: 0.3, // Toys, games
+  home: 0.35, // Home goods, kitchenware
+  default: 0.4, // Default fallback
+};
+
+function getImportDutyRate(category?: string): number {
+  if (!category) return IMPORT_DUTY_RATES.default;
+  const lower = category.toLowerCase();
+  // Match category keywords
+  for (const [key, rate] of Object.entries(IMPORT_DUTY_RATES)) {
+    if (lower.includes(key)) return rate;
+  }
+  return IMPORT_DUTY_RATES.default;
+}
 
 // FBA fee tiers by weight (BRL)
 const FBA_TIERS: Array<{ maxKg: number; fee: number }> = [
@@ -76,8 +97,9 @@ export function estimateCost(product: CostInput, calibration?: CostCalibration):
   const weight = weight_estimate_kg > 0 ? weight_estimate_kg : 2.0;
   const shippingCost = weight * SHIPPING_PER_KG_BRL;
 
-  // Import duty
-  const importDuty = factoryCost * IMPORT_DUTY_RATE;
+  // Import duty (category-aware)
+  const importDutyRate = getImportDutyRate(product.category);
+  const importDuty = factoryCost * importDutyRate;
 
   // FBA fee
   const tier = FBA_TIERS.find((t) => weight <= t.maxKg);
