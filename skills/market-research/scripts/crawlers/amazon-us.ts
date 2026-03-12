@@ -89,9 +89,9 @@ for i in range(1, len(parts), 2):
         whole = price_m.group(1).replace(',', '')
         frac_m = re.search(r'a-price-fraction">(\d+)', block)
         if frac_m:
-            price = f"${whole}.{frac_m.group(1)}"
+            price = "$" + whole + "." + frac_m.group(1)
         else:
-            price = f"${whole}.00"
+            price = "$" + whole + ".00"
 
     rating = ""
     rating_m = re.search(r'a-icon-alt">([0-9.]+)\s+out\s+of\s+5', block)
