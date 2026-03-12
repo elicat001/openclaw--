@@ -20,9 +20,14 @@ export function StatsCards() {
   const [stats, setStats] = useState<Stats | null>(null);
 
   useEffect(() => {
-    fetch("/api/stats")
-      .then((r) => r.json())
-      .then(setStats);
+    const load = () =>
+      fetch("/api/stats")
+        .then((r) => r.json())
+        .then(setStats)
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 15_000);
+    return () => clearInterval(timer);
   }, []);
 
   return (

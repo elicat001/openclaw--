@@ -206,6 +206,57 @@ async function executeJob(jobId: string) {
   });
 }
 
+// ── Report summary extraction ──
+
+function extractReportSummary(content: string, reportType: string): Record<string, unknown> {
+  const summary: Record<string, unknown> = {};
+
+  // Extract verdict (✅/⚠️/❌)
+  if (content.includes("✅ 综合判断：建议进入")) summary.verdict = "go";
+  else if (content.includes("⚠️ 综合判断")) summary.verdict = "caution";
+  else if (content.includes("❌ 综合判断")) summary.verdict = "no";
+
+  // Extract margin percentage
+  const marginMatch = content.match(/中位价毛利率\s*\|\s*(\d+)%/);
+  if (marginMatch) summary.medianMarginPct = parseInt(marginMatch[1]);
+
+  const bestMarginMatch = content.match(/最佳.*?毛利率?\s*\|\s*(\d+)%/);
+  if (bestMarginMatch) summary.bestMarginPct = parseInt(bestMarginMatch[1]);
+
+  // Extract blue ocean count
+  const blueOceanMatch = content.match(/蓝海.*?机会.*?\|\s*(\d+)/);
+  if (blueOceanMatch) summary.blueOceanCount = parseInt(blueOceanMatch[1]);
+
+  // Extract arbitrage count
+  const arbitrageMatch = content.match(/降价机会.*?\|\s*(\d+)/);
+  if (arbitrageMatch) summary.arbitrageCount = parseInt(arbitrageMatch[1]);
+
+  // For discovery reports: count verdicts
+  if (reportType === "discovery") {
+    const goCount = (content.match(/✅/g) || []).length;
+    const cautionCount = (content.match(/⚠️/g) || []).length;
+    const noCount = (content.match(/❌/g) || []).length;
+    // Subtract header occurrences (rough estimate: table has one per keyword)
+    summary.goKeywords = Math.max(0, Math.floor(goCount / 2));
+    summary.cautionKeywords = Math.max(0, Math.floor(cautionCount / 2));
+    summary.noKeywords = Math.max(0, Math.floor(noCount / 2));
+
+    // Extract summary line
+    const summaryLine = content.match(/(\d+)\s*个建议进入.*?(\d+)\s*个谨慎.*?(\d+)\s*个不建议/);
+    if (summaryLine) {
+      summary.goKeywords = parseInt(summaryLine[1]);
+      summary.cautionKeywords = parseInt(summaryLine[2]);
+      summary.noKeywords = parseInt(summaryLine[3]);
+    }
+  }
+
+  // Extract BR median price
+  const medianPriceMatch = content.match(/BR.*?中位价\s*\|\s*R\$(\d+)/);
+  if (medianPriceMatch) summary.brMedianPrice = parseInt(medianPriceMatch[1]);
+
+  return summary;
+}
+
 // ── Result ingestion ──
 
 async function ingestResults(
@@ -240,6 +291,9 @@ async function ingestResults(
       const keyword = typeof params.keyword === "string" ? params.keyword : undefined;
       const category = typeof params.category === "string" ? params.category : undefined;
 
+      // Extract summary from report content
+      const summary = extractReportSummary(content, reportType);
+
       await db.insert(reports).values({
         id: reportId,
         jobId,
@@ -251,6 +305,7 @@ async function ingestResults(
         keyword,
         category,
         content,
+        summary: JSON.stringify(summary),
         createdAt: new Date(),
       });
 
@@ -268,8 +323,14 @@ async function ingestResults(
         const platform = jsonFile.replace(".json", "");
         const keyword = typeof params.keyword === "string" ? params.keyword : undefined;
 
+        const seen = new Set<string>();
         for (const p of data.slice(0, 200)) {
           // Cap at 200 per file
+          // Deduplicate by name+platform within same job
+          const dedupeKey = `${platform}:${(p.name || "").slice(0, 100)}`;
+          if (seen.has(dedupeKey)) continue;
+          seen.add(dedupeKey);
+
           await db.insert(products).values({
             jobId,
             platform,
@@ -328,6 +389,28 @@ export async function createAndStartJob(
   processQueue();
 
   return id;
+}
+
+/** Recover pending/running jobs from DB after server restart */
+export async function recoverJobs() {
+  // Mark previously "running" jobs as failed (they died with the server)
+  await db
+    .update(jobs)
+    .set({ status: "failed", error: "Server restarted", completedAt: new Date() })
+    .where(eq(jobs.status, "running"));
+
+  // Re-queue pending jobs
+  const pendingJobs = await db.select({ id: jobs.id }).from(jobs).where(eq(jobs.status, "pending"));
+
+  for (const j of pendingJobs) {
+    getJobEmitter(j.id);
+    jobQueue.push(j.id);
+  }
+
+  if (pendingJobs.length > 0) {
+    console.log(`[job-runner] Recovered ${pendingJobs.length} pending jobs`);
+    processQueue();
+  }
 }
 
 export async function cancelJob(jobId: string): Promise<boolean> {

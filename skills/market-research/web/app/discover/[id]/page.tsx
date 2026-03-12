@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { JobLog } from "@/components/job-log";
 
 type Job = {
@@ -20,11 +20,18 @@ export default function DiscoverDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [job, setJob] = useState<Job | null>(null);
 
-  useEffect(() => {
+  const loadJob = useCallback(() => {
     fetch(`/api/jobs/${id}`)
       .then((r) => r.json())
-      .then(setJob);
+      .then(setJob)
+      .catch(() => {});
   }, [id]);
+
+  useEffect(() => {
+    loadJob();
+    const timer = setInterval(loadJob, 5_000);
+    return () => clearInterval(timer);
+  }, [loadJob]);
 
   if (!job) {
     return <div className="text-gray-400 text-sm animate-pulse">加载中...</div>;

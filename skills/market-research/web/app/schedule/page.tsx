@@ -34,13 +34,24 @@ const CATEGORIES = [
   "office",
 ];
 
+const PLATFORMS = [
+  { id: "amazon-us", label: "Amazon US" },
+  { id: "amazon-br", label: "Amazon BR" },
+  { id: "meli", label: "Mercado Livre" },
+];
+
 export default function SchedulePage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
+  const [jobType, setJobType] = useState<"discover" | "crawl">("discover");
   const [category, setCategory] = useState("home");
   const [cronExpr, setCronExpr] = useState("0 3 * * *");
   const [maxKeywords, setMaxKeywords] = useState(10);
+  // Crawl-specific
+  const [keyword, setKeyword] = useState("");
+  const [platforms, setPlatforms] = useState(["amazon-us", "amazon-br"]);
+  const [maxProducts, setMaxProducts] = useState(50);
 
   const loadSchedules = () => {
     fetch("/api/schedules")
@@ -52,19 +63,24 @@ export default function SchedulePage() {
     loadSchedules();
   }, []);
 
+  const togglePlatform = (id: string) => {
+    setPlatforms((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
+  };
+
   const createSchedule = async () => {
+    const params =
+      jobType === "discover"
+        ? { category, maxKeywords, maxPerKeyword: 50 }
+        : { keyword, platforms, max: maxProducts };
+
     await fetch("/api/schedules", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        type: "discover",
-        params: { category, maxKeywords, maxPerKeyword: 50 },
-        cronExpr,
-      }),
+      body: JSON.stringify({ name, type: jobType, params, cronExpr }),
     });
     setShowForm(false);
     setName("");
+    setKeyword("");
     loadSchedules();
   };
 
@@ -81,6 +97,9 @@ export default function SchedulePage() {
     await fetch(`/api/schedules/${id}`, { method: "DELETE" });
     loadSchedules();
   };
+
+  const canSubmit =
+    name.trim() && (jobType === "discover" || (keyword.trim() && platforms.length > 0));
 
   return (
     <div>
@@ -107,20 +126,113 @@ export default function SchedulePage() {
             />
           </div>
 
+          {/* Type selector */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">品类</label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-1">任务类型</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setJobType("discover")}
+                className={`px-4 py-1.5 rounded-lg text-sm border ${
+                  jobType === "discover"
+                    ? "bg-green-50 border-green-400 text-green-700"
+                    : "bg-gray-50 border-gray-300 text-gray-500"
+                }`}
+              >
+                品类发现
+              </button>
+              <button
+                type="button"
+                onClick={() => setJobType("crawl")}
+                className={`px-4 py-1.5 rounded-lg text-sm border ${
+                  jobType === "crawl"
+                    ? "bg-blue-50 border-blue-400 text-blue-700"
+                    : "bg-gray-50 border-gray-300 text-gray-500"
+                }`}
+              >
+                关键词爬虫
+              </button>
+            </div>
           </div>
+
+          {/* Type-specific params */}
+          {jobType === "discover" ? (
+            <>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">品类</label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                >
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  最大关键词数: {maxKeywords}
+                </label>
+                <input
+                  type="range"
+                  min={3}
+                  max={20}
+                  value={maxKeywords}
+                  onChange={(e) => setMaxKeywords(parseInt(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">产品关键词</label>
+                <input
+                  type="text"
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  placeholder="例: triangle mop foldable"
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">平台</label>
+                <div className="flex gap-2">
+                  {PLATFORMS.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => togglePlatform(p.id)}
+                      className={`px-3 py-1.5 rounded-lg text-sm border ${
+                        platforms.includes(p.id)
+                          ? "bg-blue-50 border-blue-400 text-blue-700"
+                          : "bg-gray-50 border-gray-300 text-gray-500"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  每平台产品数: {maxProducts}
+                </label>
+                <input
+                  type="range"
+                  min={10}
+                  max={100}
+                  step={10}
+                  value={maxProducts}
+                  onChange={(e) => setMaxProducts(parseInt(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+            </>
+          )}
 
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">执行频率</label>
@@ -149,23 +261,9 @@ export default function SchedulePage() {
             />
           </div>
 
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              最大关键词数: {maxKeywords}
-            </label>
-            <input
-              type="range"
-              min={3}
-              max={20}
-              value={maxKeywords}
-              onChange={(e) => setMaxKeywords(parseInt(e.target.value))}
-              className="w-full"
-            />
-          </div>
-
           <button
             onClick={createSchedule}
-            disabled={!name.trim()}
+            disabled={!canSubmit}
             className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
             创建
@@ -180,6 +278,12 @@ export default function SchedulePage() {
         ) : (
           schedules.map((s) => {
             const params = JSON.parse(s.params);
+            const typeLabel = s.type === "discover" ? "品类发现" : "关键词爬虫";
+            const detail =
+              s.type === "discover"
+                ? `品类: ${params.category} | 关键词数: ${params.maxKeywords}`
+                : `关键词: ${params.keyword} | 平台: ${(params.platforms || []).join(", ")}`;
+
             return (
               <div
                 key={s.id}
@@ -191,10 +295,19 @@ export default function SchedulePage() {
                       className={`w-2 h-2 rounded-full ${s.enabled ? "bg-green-500" : "bg-gray-400"}`}
                     />
                     <span className="font-medium text-sm">{s.name}</span>
+                    <span
+                      className={`text-xs px-1.5 py-0.5 rounded ${
+                        s.type === "discover"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-blue-100 text-blue-700"
+                      }`}
+                    >
+                      {typeLabel}
+                    </span>
                     <span className="text-xs text-gray-500 font-mono">{s.cronExpr}</span>
                   </div>
                   <p className="text-xs text-gray-400">
-                    品类: {params.category} | 关键词数: {params.maxKeywords}
+                    {detail}
                     {s.nextRunAt && ` | 下次执行: ${new Date(s.nextRunAt).toLocaleString("zh-CN")}`}
                   </p>
                 </div>

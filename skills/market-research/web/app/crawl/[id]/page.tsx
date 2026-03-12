@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { JobLog } from "@/components/job-log";
 
 type Job = {
@@ -20,11 +20,29 @@ export default function CrawlDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [job, setJob] = useState<Job | null>(null);
 
-  useEffect(() => {
+  const loadJob = useCallback(() => {
     fetch(`/api/jobs/${id}`)
       .then((r) => r.json())
-      .then(setJob);
+      .then(setJob)
+      .catch(() => {});
   }, [id]);
+
+  // Initial load + poll every 5s while job is not done
+  useEffect(() => {
+    loadJob();
+    const timer = setInterval(() => {
+      loadJob();
+    }, 5_000);
+    return () => clearInterval(timer);
+  }, [loadJob]);
+
+  // Stop polling when done
+  useEffect(() => {
+    if (job && (job.status === "done" || job.status === "failed" || job.status === "cancelled")) {
+      // One final refresh to get reportId
+      loadJob();
+    }
+  }, [job?.status, loadJob]);
 
   if (!job) {
     return <div className="text-gray-400 text-sm animate-pulse">加载中...</div>;

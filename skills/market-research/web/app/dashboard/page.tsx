@@ -29,12 +29,19 @@ export default function DashboardPage() {
   const [recentReports, setRecentReports] = useState<ReportItem[]>([]);
 
   useEffect(() => {
-    fetch("/api/jobs?limit=5")
-      .then((r) => r.json())
-      .then((d) => setRecentJobs(d.jobs || []));
-    fetch("/api/reports?limit=5")
-      .then((r) => r.json())
-      .then((d) => setRecentReports(d.reports || []));
+    const load = () => {
+      fetch("/api/jobs?limit=5")
+        .then((r) => r.json())
+        .then((d) => setRecentJobs(d.jobs || []))
+        .catch(() => {});
+      fetch("/api/reports?limit=5")
+        .then((r) => r.json())
+        .then((d) => setRecentReports(d.reports || []))
+        .catch(() => {});
+    };
+    load();
+    const timer = setInterval(load, 15_000);
+    return () => clearInterval(timer);
   }, []);
 
   return (
